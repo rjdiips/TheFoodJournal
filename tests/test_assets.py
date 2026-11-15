@@ -13,6 +13,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WEB_DIR = REPO_ROOT / "web"
 ASSET_REFERENCE = re.compile(r'(?:src|href)="(/assets/[^"]+)"')
+CSS_ASSET_URL = re.compile(r"url\(['\"](/assets/[^'\"]+)['\"]\)")
 CSS_IMPORT = re.compile(r'@import url\("([^"]+)"\)')
 SCRIPT_TAG = re.compile(r"<script\b([^>]*)>", re.IGNORECASE)
 MODULE_SPECIFIER = re.compile(r'(?:\bfrom|\bimport)\s+[\'"]((?:\.{1,2}/|/)[^\'"]+)[\'"]')
@@ -32,6 +33,13 @@ class TestAssetReferences(unittest.TestCase):
                 with self.subTest(manifest=manifest.name, asset=reference):
                     target = WEB_DIR / reference.removeprefix("/assets/")
                     self.assertTrue(target.is_file(), f"{manifest.name} imports missing {reference}")
+
+    def test_every_font_and_css_asset_url_exists(self):
+        for sheet in sorted((WEB_DIR / "css").rglob("*.css")):
+            for reference in CSS_ASSET_URL.findall(sheet.read_text(encoding="utf-8")):
+                with self.subTest(sheet=sheet.name, asset=reference):
+                    target = WEB_DIR / reference.removeprefix("/assets/")
+                    self.assertTrue(target.is_file(), f"{sheet.name} references missing {reference}")
 
     def test_every_module_import_resolves_to_a_file(self):
         for script in sorted((WEB_DIR / "js").rglob("*.js")):

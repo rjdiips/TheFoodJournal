@@ -4,6 +4,7 @@ Only the browser application under ``web/`` is reachable. Everything else in
 the repository — source, ``.env``, journals — stays outside the mounted tree.
 """
 
+import mimetypes
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -12,12 +13,17 @@ from fastapi.staticfiles import StaticFiles
 
 from ..config import BASE_DIR
 
+# Python before 3.14 does not know the woff2 type, and a font served as
+# text/plain is refused under the nosniff header set below.
+mimetypes.add_type("font/woff2", ".woff2")
+
 WEB_DIR = BASE_DIR / "web"
 
 PAGE_ROUTES = {
-    "/": "web/pages/nutriparse.html",
-    "/index.html": "web/pages/nutriparse.html",
+    "/": "web/pages/food-journal.html",
+    "/index.html": "web/pages/food-journal.html",
     "/food-journal.html": "web/pages/food-journal.html",
+    "/nutriparse.html": "web/pages/nutriparse.html",
 }
 
 # Stable top-level asset URLs kept for bookmarks and older clients. New pages

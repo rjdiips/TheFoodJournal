@@ -82,7 +82,9 @@ The `uvicorn` form imports the module-level `app` directly, so it skips `main()`
 
 2. Open http://localhost:8100 in your browser. The same app also serves interactive API documentation at http://localhost:8100/docs.
 
-The app has two views, switched from the top bar.
+`/` serves the Food Journal, which is the main app: Today, Log a meal, Create a meal, and History, all reading and writing the journal store. The older Compose page is still served at `/nutriparse.html`, and `/food-journal.html` is an alias for the main app.
+
+The Compose page has two views, switched from the top bar.
 
 **Compose** is the prompt-first surface, with two intents sharing one input. **Estimate** turns a meal ("2 rotis, dal, and a glass of lassi") into one row per item; **Cook** turns an ingredient list into three recipe ideas with steps and per-serving macros. Every parsed name and number is editable, totals are summed server-side from the rows you can see, and **Request details** exposes the provider, model, latency, token counts, and the raw response JSON in both modes. Failures surface as typed messages with a retry, and images degrade to a labelled strip when the local service is off. **Add a row manually** seeds one blank editable row for numbers you already know; for that row the inspector reads *Pending save* and previews the payload the save will write, instead of implying a model call that never happened.
 
@@ -129,7 +131,7 @@ Writes are validated before they touch the file and then swapped in atomically, 
 
 Writers are serialised twice: a thread lock covers requests inside one server process, and a sidecar lock file (`data.json.lock`, created next to the journal and ignored by Git) covers separate processes — two Uvicorn workers, or a server and a script. A writer that cannot take the file lock within 10 seconds fails with HTTP 503 instead of overwriting another process's rows. Readers take no lock, because `os.replace` only ever exposes a complete document. The lock file stays behind with a single byte in it; delete it while no server is running if you want a clean directory.
 
-Entries saved by an earlier version of the web app, in `localStorage` under `ct_data`, are moved up once on the first page load: valid rows are posted to the server and removed from the browser, and any row the server would reject is left in the browser rather than dropped. The Food Journal is available at http://localhost:8100/food-journal.html and reads and writes the same store. One caveat worth stating: the migration assumes one tab is open, so two tabs loading at the same instant can each claim the same browser rows and you may see duplicates once.
+Entries saved by an earlier version of the web app, in `localStorage` under `ct_data`, are moved up once on the first page load: valid rows are posted to the server and removed from the browser, and any row the server would reject is left in the browser rather than dropped. The Food Journal is the main app at http://localhost:8100/ and reads and writes the same store. One caveat worth stating: the migration assumes one tab is open, so two tabs loading at the same instant can each claim the same browser rows and you may see duplicates once.
 
 ### Local recipe images (NVIDIA CUDA)
 
@@ -340,7 +342,7 @@ app/
 web/
   pages/               nutriparse.html, food-journal.html
   css/nutriparse/      base, compose, results, recipes, journal
-  css/food-journal/    base, layout, compose, journal, responsive
+  css/food-journal/    base, layout, compose, journal, responsive, fonts
   js/nutriparse.js     Compose module: DOM refs, state, copy, mode and view switches
   js/nutriparse/       boot entry plus request, estimate, recipes, inspector, journal, samples
   js/food-journal.js   Food Journal module entry: today, compose, history, goal, alchemist
@@ -348,6 +350,7 @@ web/
   js/journal-client.js compatibility-only classic shim for the old /journal-client.js URL
   js/config-client.js  server-driven AI timeouts, kept as a classic script for the Node test
   js/config-module.js  ES-module interface to config-client.js
+  fonts/               self-hosted woff2 for the Food Journal, with OFL licences
   assets/              favicon files
 scripts/
   seed_demo.py         writes data.demo.json for screenshots
@@ -370,8 +373,8 @@ image-cache/           generated recipe PNGs keyed by content hash (ignored by G
 .llm-tools/            downloaded llama.cpp runtime (ignored by Git)
 ```
 
-The public asset URLs are stable: pages still load at `/` and
-`/food-journal.html`, and the older `/nutriparse.css`, `/journal-client.js`, and
+The public asset URLs are stable: the Food Journal loads at `/` and
+`/food-journal.html`, the older Compose page at `/nutriparse.html`, and the older `/nutriparse.css`, `/journal-client.js`, and
 `/food-journal.css` URLs remain as compatibility aliases. `/journal-client.js`
 is compatibility-only: the current pages import `web/js/journal-store.js`
 directly, and the shim exists for pages built before the module split. The old
