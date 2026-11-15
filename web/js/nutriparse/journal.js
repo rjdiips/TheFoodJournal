@@ -8,10 +8,10 @@ import {
   read, addEntries, removeEntry, setGoal, claimBrowserEntries,
 } from '../journal-store.js';
 
-/* The journal lives in the server's data.json rather than in this browser, so
-   the Compose page's Journal view and the Food Journal read one document.
-   journal-store.js holds the calls; every one of them answers with the whole
-   store, so the copy below is always whatever the server last saved. */
+/* The journal lives on the server, one per browser id, so this page's Journal
+   view and the Food Journal read the same record. journal-store.js holds the
+   calls; every one of them answers with the whole store, so the copy below is
+   always whatever the server last saved. */
 
 let journal = { calorie_goal: 2000, entries: [] };
 let journalLoaded = false;

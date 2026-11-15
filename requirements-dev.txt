@@ -1,1 +1,3 @@
 -r requirements.txt
+# In-memory MongoDB for the store tests; no database server needed.
+mongomock>=4.3,<5.0

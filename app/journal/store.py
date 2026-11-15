@@ -1,33 +1,27 @@
 #!/usr/bin/env python3
-"""The journal store: one JSON document and one set of rules.
+"""The journal store: one MongoDB document and one set of rules.
 
-The web app's HTTP API (``app.web``) reads and writes ``data.json`` through this
+The web app's HTTP API (``app.web``) reads and writes the journal through this
 module, so the Compose view and the Food Journal share one store instead of
-keeping separate ones.
+keeping separate ones. Each journal is one document in the ``journals``
+collection; the document is also the API response.
 
-Every write validates the incoming entries, re-reads the document, applies the
-change, and swaps the new file in atomically through os.replace. That means a
-crash mid-write cannot leave a half-written journal behind.
+Writes are read-modify-write, guarded by the document's ``rev`` counter: read
+the document, validate, then ``replaceOne`` only when ``rev`` still matches.
+The losing writer retries a few times and then reports ``StoreBusy``, so two
+writers can never drop each other's rows.
 
-Writers are serialised twice: a thread lock covers requests inside one server
-process, and a sidecar lock file (``data.json.lock``) covers separate processes
-such as two Uvicorn workers. Readers stay lock-free because ``os.replace`` only
-ever exposes a complete document.
+``store`` is the only module that knows a database is involved, so swapping it
+back out stays a change in one file.
 """
 
-import json
 import math
-import os
-import tempfile
-import threading
-import time
 import uuid
-from contextlib import contextmanager
-from datetime import date, datetime
-from pathlib import Path
+from datetime import date, datetime, timezone
 
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
-DEFAULT_PATH = BASE_DIR / "data.json"
+from pymongo import MongoClient
+from pymongo.errors import DuplicateKeyError, ServerSelectionTimeoutError
+
 DEFAULT_GOAL = 2000
 MAX_GOAL = 20000
 MAX_ENTRIES_PER_WRITE = 50
@@ -35,10 +29,17 @@ MAX_NAME_LENGTH = 120
 MAX_PORTION_LENGTH = 120
 MEALS = ("breakfast", "lunch", "dinner", "snack")
 
-# One process can serve several requests at once, so read-modify-write cycles
-# are serialised here. The sidecar file lock below covers a second process.
-_LOCK = threading.Lock()
-LOCK_TIMEOUT = 10.0
+# 04a keeps one shared journal. 04b replaces this with a per-browser id.
+DEFAULT_JOURNAL_ID = "0" * 32
+COLLECTION = "journals"
+WRITE_ATTEMPTS = 3
+CLIENT_OPTIONS = {
+    "serverSelectionTimeoutMS": 3000,
+    "connectTimeoutMS": 3000,
+    "socketTimeoutMS": 5000,
+    "maxPoolSize": 10,
+    "retryWrites": True,
+}
 
 
 class StoreError(Exception):
@@ -50,7 +51,12 @@ class EntryNotFound(StoreError):
 
 
 class StoreBusy(StoreError):
-    """Another process held the write lock longer than LOCK_TIMEOUT."""
+    """Another writer kept winning the revision race."""
+
+
+def create_client(uri):
+    """Return the one pooled client the process shares."""
+    return MongoClient(uri, **CLIENT_OPTIONS)
 
 
 def number(value, default=0.0):
@@ -63,94 +69,6 @@ def number(value, default=0.0):
         return default
     value = float(value)
     return value if math.isfinite(value) else default
-
-
-def _lock_windows(handle, timeout):
-    import msvcrt
-
-    handle.seek(0, os.SEEK_END)
-    if handle.tell() == 0:
-        handle.write(b"\0")
-        handle.flush()
-    deadline = time.monotonic() + timeout
-    while True:
-        try:
-            handle.seek(0)
-            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
-            return
-        except OSError:
-            if time.monotonic() >= deadline:
-                raise StoreBusy("The journal is busy; try again.") from None
-            time.sleep(0.05)
-
-
-def _lock_posix(handle, timeout):
-    import fcntl
-
-    deadline = time.monotonic() + timeout
-    while True:
-        try:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-            return
-        except OSError:
-            if time.monotonic() >= deadline:
-                raise StoreBusy("The journal is busy; try again.") from None
-            time.sleep(0.05)
-
-
-def _unlock(handle):
-    try:
-        if os.name == "nt":
-            import msvcrt
-
-            handle.seek(0)
-            msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
-        else:
-            import fcntl
-
-            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
-    except OSError:
-        pass
-
-
-@contextmanager
-def _file_lock(path, timeout=LOCK_TIMEOUT):
-    """Serialise writers across processes with a sidecar lock file."""
-    lock_path = Path(str(path) + ".lock")
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    handle = open(lock_path, "a+b")
-    try:
-        if os.name == "nt":
-            _lock_windows(handle, timeout)
-        else:
-            _lock_posix(handle, timeout)
-        yield
-    finally:
-        _unlock(handle)
-        handle.close()
-
-
-def _read_text(path, attempts=8, delay=0.05):
-    """Read the journal, retrying the brief window when Windows holds the file."""
-    for attempt in range(attempts):
-        try:
-            return path.read_text(encoding="utf-8")
-        except PermissionError:
-            if attempt == attempts - 1:
-                raise
-            time.sleep(delay)
-
-
-def _replace(source, destination, attempts=8, delay=0.05):
-    """Swap the file in, retrying the brief window when Windows holds it open."""
-    for attempt in range(attempts):
-        try:
-            os.replace(source, destination)
-            return
-        except PermissionError:
-            if attempt == attempts - 1:
-                raise
-            time.sleep(delay)
 
 
 def _clean_number(value, field):
@@ -214,64 +132,117 @@ def normalize_entry(raw):
     }
 
 
-def load(path=DEFAULT_PATH):
-    """Return the whole journal document with defaults filled in.
+def _collection(db):
+    return db[COLLECTION]
 
-    A missing file is an empty journal. A file that exists but cannot be parsed
-    raises instead of quietly starting over, so a corrupt store never gets
-    overwritten by the next write.
-    """
-    path = Path(path)
-    if not path.exists():
-        return {"calorie_goal": DEFAULT_GOAL, "entries": []}
-    try:
-        raw = json.loads(_read_text(path))
-    except (OSError, json.JSONDecodeError) as error:
-        raise StoreError(f"{path.name} could not be read: {error}") from error
-    if not isinstance(raw, dict):
-        raise StoreError(f"{path.name} is not a journal document.")
 
+def _empty(journal_id):
+    return {
+        "_id": journal_id,
+        "calorie_goal": DEFAULT_GOAL,
+        "rev": 0,
+        "updated_at": datetime.now(timezone.utc),
+        "entries": [],
+    }
+
+
+def _stored(raw):
+    """Normalise a document read from the database, filling old defaults in."""
     entries = raw.get("entries")
     if entries is None:
         entries = []
     if not isinstance(entries, list):
-        raise StoreError(f"{path.name} does not contain a list of entries.")
-
-    document = {"calorie_goal": DEFAULT_GOAL, "entries": entries}
+        raise StoreError("The journal does not contain a list of entries.")
     goal = raw.get("calorie_goal")
-    if not isinstance(goal, bool) and isinstance(goal, (int, float)) and math.isfinite(float(goal)):
-        document["calorie_goal"] = _clean_goal(goal)
-    if isinstance(raw.get("updated_at"), str):
-        document["updated_at"] = raw["updated_at"]
-    return document
+    if (
+        isinstance(goal, bool)
+        or not isinstance(goal, (int, float))
+        or not math.isfinite(float(goal))
+        or not 1 <= goal <= MAX_GOAL
+    ):
+        goal = DEFAULT_GOAL
+    return {
+        "_id": raw["_id"],
+        "calorie_goal": int(round(goal)),
+        "rev": raw.get("rev") or 0,
+        "updated_at": raw.get("updated_at"),
+        "entries": entries,
+    }
 
 
-def _write(path, document):
-    """Swap a complete document into place, atomically."""
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    payload = dict(document)
-    payload["updated_at"] = datetime.now().isoformat(timespec="seconds")
-    text = json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
+def _public(document):
+    updated = document.get("updated_at")
+    if isinstance(updated, datetime):
+        updated = updated.replace(tzinfo=timezone.utc).isoformat(timespec="seconds")
+    return {
+        "calorie_goal": document["calorie_goal"],
+        "entries": document["entries"],
+        "updated_at": updated if isinstance(updated, str) else None,
+    }
 
-    handle, temp_name = tempfile.mkstemp(dir=str(path.parent), prefix=".data-", suffix=".tmp")
+
+def _find(db, journal_id):
     try:
-        with os.fdopen(handle, "w", encoding="utf-8") as file:
-            file.write(text)
-            file.flush()
-            os.fsync(file.fileno())
-        _replace(temp_name, path)
-    except BaseException:
+        return _collection(db).find_one({"_id": journal_id})
+    except ServerSelectionTimeoutError as error:
+        raise StoreBusy("The journal is busy; try again.") from error
+
+
+def load(db, journal_id=DEFAULT_JOURNAL_ID):
+    """Return the whole journal document, creating it with defaults if new.
+
+    Lazy creation keeps a first visit from 404ing. An unreadable document
+    raises instead of quietly starting over, so a corrupt store never gets
+    overwritten by the next write.
+    """
+    raw = _find(db, journal_id)
+    if raw is None:
         try:
-            os.unlink(temp_name)
-        except OSError:
-            pass
-        raise
-    return payload
+            _collection(db).insert_one(_empty(journal_id))
+        except DuplicateKeyError:
+            pass  # Another request created it first; read theirs.
+        except ServerSelectionTimeoutError as error:
+            raise StoreBusy("The journal is busy; try again.") from error
+        raw = _find(db, journal_id)
+    return _public(_stored(raw))
+
+
+def _mutate(db, journal_id, change):
+    """Apply one change under the document's revision counter."""
+    collection = _collection(db)
+    for _ in range(WRITE_ATTEMPTS):
+        raw = _find(db, journal_id)
+        if raw is None:
+            document = _empty(journal_id)
+            change(document)
+            document["rev"] = 1
+            document["updated_at"] = datetime.now(timezone.utc)
+            try:
+                collection.insert_one(document)
+                return _public(document)
+            except DuplicateKeyError:
+                continue  # Another writer got there first; try again.
+            except ServerSelectionTimeoutError as error:
+                raise StoreBusy("The journal is busy; try again.") from error
+
+        document = _stored(raw)
+        change(document)
+        document["rev"] = raw.get("rev") or 0
+        document["rev"] += 1
+        document["updated_at"] = datetime.now(timezone.utc)
+        try:
+            result = collection.replace_one(
+                {"_id": journal_id, "rev": raw.get("rev")}, document
+            )
+        except ServerSelectionTimeoutError as error:
+            raise StoreBusy("The journal is busy; try again.") from error
+        if result.matched_count:
+            return _public(document)
+    raise StoreBusy("The journal is busy; try again.")
 
 
 def _validated_batch(entries):
-    """Validate a caller's rows before anything touches the file."""
+    """Validate a caller's rows before anything touches the database."""
     if not isinstance(entries, list) or not entries:
         raise StoreError("Send at least one entry.")
     if len(entries) > MAX_ENTRIES_PER_WRITE:
@@ -279,16 +250,17 @@ def _validated_batch(entries):
     return [normalize_entry(entry) for entry in entries]
 
 
-def add_entries(path, entries):
+def add_entries(db, journal_id, entries):
     """Append validated entries and return the whole updated document."""
     validated = _validated_batch(entries)
-    with _LOCK, _file_lock(path):
-        document = load(path)
+
+    def change(document):
         document["entries"] = document["entries"] + validated
-        return _write(path, document)
+
+    return _mutate(db, journal_id, change)
 
 
-def update_entry(path, entry_id, entries):
+def update_entry(db, journal_id, entry_id, entries):
     """Replace one entry with the given rows and return the whole document.
 
     The first new row keeps the original id, so a caller can treat this as an
@@ -296,8 +268,8 @@ def update_entry(path, entry_id, entries):
     """
     validated = _validated_batch(entries)
     wanted = str(entry_id)
-    with _LOCK, _file_lock(path):
-        document = load(path)
+
+    def change(document):
         index = next(
             (i for i, entry in enumerate(document["entries"]) if str(entry.get("id")) == wanted),
             None,
@@ -308,25 +280,39 @@ def update_entry(path, entry_id, entries):
         if existing_id is not None:
             validated[0]["id"] = existing_id
         document["entries"][index:index + 1] = validated
-        return _write(path, document)
+
+    return _mutate(db, journal_id, change)
 
 
-def delete_entry(path, entry_id):
+def delete_entry(db, journal_id, entry_id):
     """Remove one entry by id and return the whole updated document."""
     wanted = str(entry_id)
-    with _LOCK, _file_lock(path):
-        document = load(path)
-        remaining = [entry for entry in document["entries"] if str(entry.get("id")) != wanted]
+
+    def change(document):
+        remaining = [
+            entry for entry in document["entries"] if str(entry.get("id")) != wanted
+        ]
         if len(remaining) == len(document["entries"]):
             raise EntryNotFound("That entry is no longer in the journal.")
         document["entries"] = remaining
-        return _write(path, document)
+
+    return _mutate(db, journal_id, change)
 
 
-def set_goal(path, goal):
+def set_goal(db, journal_id, goal):
     """Set the daily calorie goal and return the whole updated document."""
     value = _clean_goal(goal)
-    with _LOCK, _file_lock(path):
-        document = load(path)
+
+    def change(document):
         document["calorie_goal"] = value
-        return _write(path, document)
+
+    return _mutate(db, journal_id, change)
+
+
+def wipe(db, journal_id=DEFAULT_JOURNAL_ID):
+    """Delete one journal and return an empty document for the next read."""
+    try:
+        _collection(db).delete_one({"_id": journal_id})
+    except ServerSelectionTimeoutError as error:
+        raise StoreBusy("The journal is busy; try again.") from error
+    return {"calorie_goal": DEFAULT_GOAL, "entries": [], "updated_at": None}

@@ -1,7 +1,7 @@
-/* NutriParse — the browser side of the shared journal store.
+/* NutriParse — the browser side of the journal store.
    Both the Compose page and the Food Journal read this journal, so neither of
-   them keeps its own copy. The server owns data.json; every call here returns
-   the whole document the server just saved.
+   them keeps its own copy. Each browser holds its own journal id; every call
+   here sends it and returns the whole document the server just saved.
 
    Both pages import the named exports below. journal-client.js remains only as
    a classic-script shim for pages built before this module existed. */
@@ -13,19 +13,72 @@
 
 const ENDPOINT = '/api/journal';
 const LEGACY_KEY = 'ct_data';
+const JOURNAL_ID_KEY = 'np_journal_id';
+const JOURNAL_ID = /^[0-9a-f]{32}$/;
 const LEGACY_MEALS = ['breakfast', 'lunch', 'dinner', 'snack'];
 const MAX_BATCH = 50;
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 const value = (n) => Math.max(0, Number(n) || 0);
 
+/** @returns {string} */
+function randomJournalId() {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+/* Kept for the case where storage is switched off, so one page load does not
+   start a new journal on every request. */
+let currentJournalId = '';
+
+/** Remember a journal id and return it in canonical form. @param {string} id */
+export function setJournalId(id) {
+  const normalized = String(id || '').trim().toLowerCase();
+  if (!JOURNAL_ID.test(normalized)) {
+    throw new Error('A journal id is 32 lowercase hex characters.');
+  }
+  currentJournalId = normalized;
+  try {
+    localStorage.setItem(JOURNAL_ID_KEY, normalized);
+  } catch {
+    // Storage can be off; the id still works for this page's requests.
+  }
+  return normalized;
+}
+
+/* The id is a bearer secret kept in this browser. `?journal=<id>` adopts one
+   from a link so a journal can be opened on another device or after storage
+   was cleared. */
+/** @returns {string} */
+export function readJournalId() {
+  let stored = '';
+  try {
+    stored = localStorage.getItem(JOURNAL_ID_KEY) || '';
+  } catch {
+    stored = '';
+  }
+  try {
+    const fromUrl = new URLSearchParams(location.search).get('journal');
+    if (fromUrl && JOURNAL_ID.test(fromUrl)) {
+      const url = new URL(location.href);
+      url.searchParams.delete('journal');
+      history.replaceState(null, '', url);
+      return setJournalId(fromUrl);
+    }
+  } catch {
+    // No usable URL; fall back to the stored id.
+  }
+  if (JOURNAL_ID.test(stored)) return stored;
+  if (JOURNAL_ID.test(currentJournalId)) return currentJournalId;
+  return setJournalId(randomJournalId());
+}
+
 async function request(method, path, body) {
-  const options = {
-    method,
-    headers: body === undefined
-      ? { Accept: 'application/json' }
-      : { 'Content-Type': 'application/json', Accept: 'application/json' },
-  };
+  /** @type {Record<string, string>} */
+  const headers = { Accept: 'application/json', 'X-Journal-Id': readJournalId() };
+  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  const options = { method, headers };
   if (body !== undefined) options.body = JSON.stringify(body);
 
   const response = await fetch(path, options);
@@ -69,6 +122,9 @@ export const removeEntry = async (id) =>
 /** @returns {Promise<JournalDocument>} */
 export const setGoal = async (goal) =>
   normalize(await request('POST', `${ENDPOINT}/goal`, { calorie_goal: goal }));
+
+/** @returns {Promise<JournalDocument>} */
+export const wipeJournal = async () => normalize(await request('DELETE', ENDPOINT));
 
 function readLegacy() {
   try {

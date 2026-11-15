@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """Seed a demo journal for screenshots.
 
-Writes `data.demo.json` — never `data.json` — with a week of plausible entries
-anchored to today, so the Journal view has a full today card, history, and a
-varied set of days (one over goal, one light) to photograph.
+Writes a week of plausible entries to the `nutriparse_demo` database, never to
+the real `nutriparse` one, anchored to today, so the Journal view has a full
+today card, history, and a varied set of days (one over goal, one light) to
+photograph.
 
     python scripts/seed_demo.py
     python -m app.main --demo
     http://localhost:8100/?view=journal
 
-Re-run the seed whenever the dates should move up to the current day.
+`MONGODB_URI` must be set in `.env` or the environment. Re-run the seed
+whenever the dates should move up to the current day.
 """
 
 import sys
@@ -19,10 +21,10 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
+from app.config import Settings  # noqa: E402 - the package root has to be importable first
 from app.journal import store  # noqa: E402 - the package root has to be importable first
 
-BASE_DIR = REPO_ROOT
-DEMO_PATH = BASE_DIR / "data.demo.json"
+DEMO_DB = "nutriparse_demo"
 DEMO_GOAL = 2200
 
 # offset from today, then (meal, name, kcal, protein g, carbs g, fat g).
@@ -113,24 +115,33 @@ def build_entries(today=None):
     return rows
 
 
-def seed(path=DEMO_PATH, today=None):
-    """Replace the demo file with a fresh week and return the document."""
-    path = Path(path)
-    if path.exists():
-        path.unlink()
+def seed(db=None, today=None):
+    """Replace the demo journal with a fresh week and return the document."""
+    client = None
+    if db is None:
+        settings = Settings()
+        if not settings.mongodb_uri:
+            raise SystemExit("MONGODB_URI is not configured; set it in .env or the environment.")
+        client = store.create_client(settings.mongodb_uri)
+        db = client[DEMO_DB]
 
-    rows = build_entries(today)
-    document = None
-    for start in range(0, len(rows), store.MAX_ENTRIES_PER_WRITE):
-        document = store.add_entries(path, rows[start:start + store.MAX_ENTRIES_PER_WRITE])
-    document = store.set_goal(path, DEMO_GOAL)
-    return document
+    try:
+        store.wipe(db, store.DEFAULT_JOURNAL_ID)
+        rows = build_entries(today)
+        for start in range(0, len(rows), store.MAX_ENTRIES_PER_WRITE):
+            store.add_entries(
+                db, store.DEFAULT_JOURNAL_ID, rows[start:start + store.MAX_ENTRIES_PER_WRITE]
+            )
+        return store.set_goal(db, store.DEFAULT_JOURNAL_ID, DEMO_GOAL)
+    finally:
+        if client is not None:
+            client.close()
 
 
 def main():
     document = seed()
     days = len({entry["date"] for entry in document["entries"]})
-    print(f"Wrote {len(document['entries'])} entries across {days} days to {DEMO_PATH.name}.")
+    print(f"Wrote {len(document['entries'])} entries across {days} days to {DEMO_DB}.")
     print(f"Daily goal: {document['calorie_goal']} kcal")
     print("Next: python -m app.main --demo, then http://localhost:8100/?view=journal")
 

@@ -4,11 +4,12 @@
 import { Config } from './config-module.js';
 import {
   read, addEntries, updateEntries, removeEntry, setGoal, claimBrowserEntries,
+  readJournalId, setJournalId, wipeJournal,
 } from './journal-store.js';
 
 const defaultData=()=>({calorie_goal:2000, entries:[]});
-/* The journal lives in the server's data.json, shared with the Compose page.
-   `data` below is this page's copy of it. */
+/* The journal lives on the server, one per browser id, and is shared with the
+   Compose page. `data` below is this page's copy of it. */
 let data=defaultData();
 /* Server-reported AI timeouts; the 300 s safety net applies until they load. */
 let timeoutConfig=null;
@@ -866,6 +867,89 @@ document.getElementById('saveGoal').addEventListener('click', async ()=>{
 });
 
 function render(){ renderEntries(); renderSummary(); renderGoal(); }
+
+/* ---------- the journal id: restore it, import a file, or start over ---------- */
+
+function importRow(entry){
+  const row=entry && typeof entry==='object'?entry:{};
+  return {
+    name:String(row.name||'').trim()||'Untitled',
+    portion:String(row.portion||'').trim(),
+    calories:num(row.calories),
+    protein:num(row.protein),
+    carbs:num(row.carbs),
+    fat:num(row.fat),
+    meal:['breakfast','lunch','dinner','snack'].includes(row.meal)?row.meal:'snack',
+    date:/^\d{4}-\d{2}-\d{2}$/.test(String(row.date||''))?row.date:today(),
+  };
+}
+
+const journalIdInput=/** @type {HTMLInputElement} */ (document.getElementById('journalIdInput'));
+const journalFile=/** @type {HTMLInputElement} */ (document.getElementById('journalFile'));
+const restoreStatus=document.getElementById('restoreStatus');
+journalIdInput.value=readJournalId();
+
+document.getElementById('restoreIdBtn').addEventListener('click',async()=>{
+  try{
+    setJournalId(journalIdInput.value);
+    applyData(await read());
+    journalIdInput.value=readJournalId();
+    render();
+    restoreStatus.textContent='Opened the journal for that id.';
+    toast('Journal restored.','success');
+  }catch(error){
+    restoreStatus.textContent=error.message;
+  }
+});
+
+document.getElementById('importJournalBtn').addEventListener('click',async()=>{
+  const file=journalFile.files&&journalFile.files[0];
+  if(!file){ restoreStatus.textContent='Choose a journal JSON file first.'; return; }
+  let payload=null;
+  try{ payload=JSON.parse(await file.text()); }
+  catch(_){ restoreStatus.textContent='That file is not JSON.'; return; }
+  const entries=payload&&Array.isArray(payload.entries)?payload.entries:[];
+  if(!confirm(`Import ${entries.length} ${entries.length===1?'entry':'entries'} from ${file.name} into a fresh journal for this browser? The current journal stays on the server under its own id.`)) return;
+
+  /* Import into a new id first. A failed import leaves the journal you were
+     reading untouched, and the new one is only adopted once it is complete. */
+  const previous=readJournalId();
+  const bytes=new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  setJournalId(Array.from(bytes,(byte)=>byte.toString(16).padStart(2,'0')).join(''));
+
+  restoreStatus.textContent='Importing…';
+  try{
+    let document=null;
+    for(let start=0;start<entries.length;start+=50){
+      document=await addEntries(entries.slice(start,start+50).map(importRow));
+    }
+    const goal=Number(payload&&payload.calorie_goal);
+    if(Number.isFinite(goal)&&goal>=1) document=await setGoal(Math.round(goal));
+    applyData(document||await read());
+    journalIdInput.value=readJournalId();
+    render();
+    restoreStatus.textContent=`Imported ${entries.length} ${entries.length===1?'entry':'entries'} into journal ${readJournalId()}.`;
+    toast('Journal imported.','success');
+  }catch(error){
+    setJournalId(previous);
+    journalIdInput.value=previous;
+    restoreStatus.textContent='Import failed: '+error.message;
+  }
+});
+
+document.getElementById('deleteJournalBtn').addEventListener('click',async()=>{
+  if(!confirm('Delete every entry in this browser’s journal? This cannot be undone.')) return;
+  try{
+    applyData(await wipeJournal());
+    render();
+    restoreStatus.textContent='This browser’s journal is empty.';
+    toast('Journal deleted.','success');
+  }catch(error){
+    restoreStatus.textContent='Could not delete: '+error.message;
+  }
+});
+
 
 async function loadTimeouts(){
   timeoutConfig=await Config.load();

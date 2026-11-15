@@ -17,6 +17,7 @@ import tempfile
 import unittest
 from contextlib import ExitStack
 from pathlib import Path
+from unittest import mock
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
@@ -26,6 +27,7 @@ IMAGE_URL_REGEX = r"^/api/recipe-image/[0-9a-f]{64}\.png$"
 
 try:
     import httpx
+    import mongomock
     from fastapi.testclient import TestClient
 
     from app.config import (
@@ -37,6 +39,7 @@ try:
         MAX_MEAL_ITEMS,
         MAX_REQUEST_BYTES,
         RECIPE_COUNT,
+        ConfigurationError,
         Settings,
         SettingsProvider,
     )
@@ -63,10 +66,12 @@ class ApiTestCase(unittest.TestCase):
         self.env_file = self.root / ".env"
         self.env_file.write_text("", encoding="utf-8")
         self.image_cache_dir = self.root / "image-cache"
+        self.mongo_db = mongomock.MongoClient().nutriparse
+        self.journal_headers = {"X-Journal-Id": store.DEFAULT_JOURNAL_ID}
         self.settings_provider = SettingsProvider(self.env_file)
         self.app = create_app(
             settings_provider=self.settings_provider,
-            store_path=self.root / "data.json",
+            mongo_db=self.mongo_db,
             image_cache_dir=self.image_cache_dir,
             http_transport=self.http_transport,
             retry_delays=self.retry_delays,
@@ -88,6 +93,9 @@ class ApiTestCase(unittest.TestCase):
         self.env_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
         self.settings_provider.reload()
         return self.settings_provider.current()
+
+    def write_headers(self, **extra):
+        return {**self.journal_headers, **extra}
 
     def entry(self, **overrides):
         row = {
@@ -241,57 +249,54 @@ class TestRuntimeConfig(ApiTestCase):
 
 
 class TestJournal(ApiTestCase):
-    def test_round_trip_returns_the_whole_document(self):
-        created = self.client.post(
+    def post_entries(self, *entries, headers=None):
+        return self.client.post(
             "/api/journal/entries",
-            json={"entries": [self.entry()]},
-            headers={"Origin": "http://localhost:8100"},
+            json={"entries": list(entries)},
+            headers=self.write_headers(**(headers or {})),
         )
+
+    def test_round_trip_returns_the_whole_document(self):
+        created = self.post_entries(self.entry())
         self.assertEqual(created.status_code, 200)
         document = created.json()
         self.assertEqual(document["calorie_goal"], 2000)
         self.assertEqual(len(document["entries"]), 1)
         entry_id = document["entries"][0]["id"]
 
-        read = self.client.get("/api/journal")
+        read = self.client.get("/api/journal", headers=self.journal_headers)
         self.assertEqual(read.json()["entries"][0]["id"], entry_id)
 
         goal = self.client.post(
             "/api/journal/goal",
             json={"calorie_goal": 2200},
-            headers={"Origin": "http://localhost:8100"},
+            headers=self.write_headers(),
         )
         self.assertEqual(goal.status_code, 200)
         self.assertEqual(goal.json()["calorie_goal"], 2200)
 
-        deleted = self.client.delete(f"/api/journal/entries/{entry_id}")
+        deleted = self.client.delete(
+            f"/api/journal/entries/{entry_id}", headers=self.journal_headers
+        )
         self.assertEqual(deleted.status_code, 200)
         self.assertEqual(deleted.json()["entries"], [])
 
     def test_portion_survives_the_round_trip(self):
-        created = self.client.post(
-            "/api/journal/entries",
-            json={"entries": [self.entry(portion="2 rotis")]},
-            headers={"Origin": "http://localhost:8100"},
-        )
+        created = self.post_entries(self.entry(portion="2 rotis"))
         self.assertEqual(created.status_code, 200)
         self.assertEqual(created.json()["entries"][0]["portion"], "2 rotis")
 
-        read = self.client.get("/api/journal")
+        read = self.client.get("/api/journal", headers=self.journal_headers)
         self.assertEqual(read.json()["entries"][0]["portion"], "2 rotis")
 
     def test_update_replaces_an_entry(self):
-        created = self.client.post(
-            "/api/journal/entries",
-            json={"entries": [self.entry()]},
-            headers={"Origin": "http://localhost:8100"},
-        )
+        created = self.post_entries(self.entry())
         entry_id = created.json()["entries"][0]["id"]
 
         updated = self.client.put(
             f"/api/journal/entries/{entry_id}",
             json={"entries": [self.entry(name="Dal", calories=150, portion="1 bowl")]},
-            headers={"Origin": "http://localhost:8100"},
+            headers=self.write_headers(),
         )
         self.assertEqual(updated.status_code, 200)
         rows = updated.json()["entries"]
@@ -303,35 +308,27 @@ class TestJournal(ApiTestCase):
         response = self.client.put(
             "/api/journal/entries/not-there",
             json={"entries": [self.entry()]},
-            headers={"Origin": "http://localhost:8100"},
+            headers=self.write_headers(),
         )
         self.assert_error(response, 404, "That entry is no longer in the journal.")
 
     def test_update_needs_entries(self):
-        created = self.client.post(
-            "/api/journal/entries",
-            json={"entries": [self.entry()]},
-            headers={"Origin": "http://localhost:8100"},
-        )
+        created = self.post_entries(self.entry())
         entry_id = created.json()["entries"][0]["id"]
         response = self.client.put(
             f"/api/journal/entries/{entry_id}",
             json={"entries": []},
-            headers={"Origin": "http://localhost:8100"},
+            headers=self.write_headers(),
         )
         self.assert_error(response, 400, "Send at least one entry.")
 
     def test_cross_origin_updates_are_refused(self):
-        created = self.client.post(
-            "/api/journal/entries",
-            json={"entries": [self.entry()]},
-            headers={"Origin": "http://localhost:8100"},
-        )
+        created = self.post_entries(self.entry())
         entry_id = created.json()["entries"][0]["id"]
         response = self.client.put(
             f"/api/journal/entries/{entry_id}",
             json={"entries": [self.entry()]},
-            headers={"Origin": "https://evil.example"},
+            headers=self.write_headers(Origin="https://evil.example"),
         )
         self.assert_error(response, 403, "Journal writes must come from the NutriParse app")
 
@@ -339,28 +336,144 @@ class TestJournal(ApiTestCase):
         response = self.client.post(
             "/api/journal/goal",
             json={"calorie_goal": 2200},
-            headers={"Origin": "https://evil.example"},
+            headers=self.write_headers(Origin="https://evil.example"),
         )
         self.assert_error(response, 403, "Journal writes must come from the NutriParse app")
-        self.assertFalse(Path(self.app.state.store_path).exists())
+        self.assertEqual(self.mongo_db[store.COLLECTION].count_documents({}), 0)
+
+    def test_a_write_from_the_public_origin_is_allowed(self):
+        response = self.client.post(
+            "/api/journal/goal",
+            json={"calorie_goal": 2200},
+            headers=self.write_headers(
+                Host="nutriparse.onrender.com",
+                Origin="https://nutriparse.onrender.com",
+                **{"X-Forwarded-Proto": "https"},
+            ),
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["calorie_goal"], 2200)
+
+    def test_an_origin_with_the_request_port_still_matches_host(self):
+        response = self.client.post(
+            "/api/journal/goal",
+            json={"calorie_goal": 2200},
+            headers=self.write_headers(Origin="http://localhost:8100"),
+        )
+        self.assertEqual(response.status_code, 200)
+
+    def test_a_write_without_an_origin_is_allowed(self):
+        response = self.client.post(
+            "/api/journal/goal",
+            json={"calorie_goal": 2200},
+            headers=self.journal_headers,
+        )
+        self.assertEqual(response.status_code, 200)
 
     def test_invalid_entries_are_rejected_by_the_store(self):
-        response = self.client.post(
-            "/api/journal/entries",
-            json={"entries": [self.entry(meal="brunch")]},
-            headers={"Origin": "http://localhost:8100"},
-        )
+        response = self.post_entries(self.entry(meal="brunch"))
         self.assert_error(response, 400, "Meal must be one of: breakfast, lunch, dinner, snack.")
 
     def test_unknown_entry_is_404(self):
-        response = self.client.delete("/api/journal/entries/not-there")
+        response = self.client.delete(
+            "/api/journal/entries/not-there", headers=self.journal_headers
+        )
         self.assert_error(response, 404, "That entry is no longer in the journal.")
 
-    def test_corrupt_store_is_500(self):
-        Path(self.app.state.store_path).write_text("{ not json", encoding="utf-8")
-        response = self.client.get("/api/journal")
+    def test_a_malformed_document_is_500(self):
+        self.mongo_db[store.COLLECTION].insert_one(
+            {"_id": store.DEFAULT_JOURNAL_ID, "entries": "nope"}
+        )
+        response = self.client.get("/api/journal", headers=self.journal_headers)
         self.assertEqual(response.status_code, 500)
-        self.assertIn("could not be read", response.json()["error"])
+        self.assertIn("list of entries", response.json()["error"])
+
+    def test_two_journals_never_see_each_other(self):
+        other = "b" * 32
+        self.post_entries(self.entry(name="Roti"))
+        created = self.client.post(
+            "/api/journal/entries",
+            json={"entries": [self.entry(name="Dal")]},
+            headers={"X-Journal-Id": other},
+        )
+        self.assertEqual(created.status_code, 200)
+
+        mine = self.client.get("/api/journal", headers=self.journal_headers).json()
+        theirs = self.client.get("/api/journal", headers={"X-Journal-Id": other}).json()
+        self.assertEqual([row["name"] for row in mine["entries"]], ["Roti"])
+        self.assertEqual([row["name"] for row in theirs["entries"]], ["Dal"])
+
+    def test_a_goal_in_one_journal_does_not_change_another(self):
+        other = "b" * 32
+        self.client.post(
+            "/api/journal/goal",
+            json={"calorie_goal": 2200},
+            headers=self.write_headers(),
+        )
+        theirs = self.client.get("/api/journal", headers={"X-Journal-Id": other}).json()
+        self.assertEqual(theirs["calorie_goal"], 2000)
+
+    def test_a_missing_or_malformed_id_is_refused(self):
+        for headers in ({}, {"X-Journal-Id": "short"}, {"X-Journal-Id": "A" * 32}):
+            with self.subTest(headers=headers):
+                response = self.client.get("/api/journal", headers=headers)
+                self.assert_error(response, 400, "X-Journal-Id must be 32 lowercase hex characters.")
+
+    def test_an_unknown_well_formed_id_creates_a_fresh_journal(self):
+        response = self.client.get(
+            "/api/journal", headers={"X-Journal-Id": "c" * 32}
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual((body["calorie_goal"], body["entries"]), (2000, []))
+
+    def test_delete_wipes_only_the_calling_journal(self):
+        other = "b" * 32
+        self.post_entries(self.entry(name="Roti"))
+        self.client.post(
+            "/api/journal/entries",
+            json={"entries": [self.entry(name="Dal")]},
+            headers={"X-Journal-Id": other},
+        )
+        response = self.client.delete("/api/journal", headers=self.write_headers())
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["entries"], [])
+        self.assertEqual(
+            self.client.get("/api/journal", headers=self.journal_headers).json()["entries"],
+            [],
+        )
+        self.assertEqual(
+            len(self.client.get("/api/journal", headers={"X-Journal-Id": other})
+                .json()["entries"]),
+            1,
+        )
+
+    def test_the_journal_outlives_the_application_instance(self):
+        self.post_entries(self.entry(name="Roti"))
+        second = create_app(
+            settings_provider=self.settings_provider,
+            mongo_db=self.mongo_db,
+            image_cache_dir=self.image_cache_dir,
+        )
+        with TestClient(second, base_url="http://localhost:8100") as client:
+            document = client.get("/api/journal", headers=self.journal_headers).json()
+        self.assertEqual([row["name"] for row in document["entries"]], ["Roti"])
+
+
+class TestStartup(ApiTestCase):
+    def test_a_missing_mongodb_uri_fails_at_startup(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            env_file = Path(tmp) / ".env"
+            env_file.write_text("", encoding="utf-8")
+            app = create_app(
+                settings_provider=SettingsProvider(env_file),
+                image_cache_dir=Path(tmp) / "image-cache",
+            )
+            with mock.patch.dict(os.environ, {"MONGODB_URI": ""}):
+                with self.assertRaises(ConfigurationError) as caught:
+                    with TestClient(app):
+                        pass
+        self.assertIn("MONGODB_URI", str(caught.exception))
 
 
 class TestRequestBodies(ApiTestCase):
@@ -401,20 +514,21 @@ class TestResponseModels(ApiTestCase):
     """Typed responses must accept the real shapes the services produce."""
 
     def test_success_responses_keep_the_api_headers(self):
-        response = self.client.get("/api/journal")
+        response = self.client.get("/api/journal", headers=self.journal_headers)
         self.assertEqual(response.headers["cache-control"], "no-store")
         self.assertEqual(response.headers["x-content-type-options"], "nosniff")
 
     def test_legacy_numeric_ids_survive_the_response_model(self):
-        Path(self.app.state.store_path).write_text(json.dumps({
+        self.mongo_db[store.COLLECTION].insert_one({
+            "_id": store.DEFAULT_JOURNAL_ID,
             "calorie_goal": 1800,
             "entries": [{
                 "id": 1750000000.5, "name": "Dal", "calories": 150,
                 "meal": "lunch", "date": "2026-10-20",
                 "protein": 9, "carbs": 20, "fat": 4,
             }],
-        }), encoding="utf-8")
-        response = self.client.get("/api/journal")
+        })
+        response = self.client.get("/api/journal", headers=self.journal_headers)
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["entries"][0]["id"], "1750000000.5")
 

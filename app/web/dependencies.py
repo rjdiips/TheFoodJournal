@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import re
 import time
 import uuid
 from pathlib import Path
@@ -57,10 +58,30 @@ def require_same_origin(request):
     if not origin:
         # Same-origin requests and non-browser clients may omit it.
         return
-    port = request.url.port or (443 if request.url.scheme == "https" else 80)
-    allowed = {f"localhost:{port}", f"127.0.0.1:{port}", f"[::1]:{port}"}
-    if urlsplit(origin).netloc.lower() not in allowed:
+    # Compare against Host, which the proxy forwards unchanged. Deriving a port
+    # from request.url.scheme would see http behind Render's TLS terminator and
+    # never match the browser's https Origin.
+    if urlsplit(origin).netloc.lower() != request.headers.get("host", "").lower():
         raise HTTPException(403, "Journal writes must come from the NutriParse app")
+
+
+_JOURNAL_ID = re.compile(r"[0-9a-f]{32}")
+
+
+def journal_id(request: Request) -> str:
+    """Return the calling browser's journal id, refusing a missing or bad one.
+
+    The id is a bearer secret held by the browser, so it is validated before it
+    can reach a query as a different key. Demo mode overrides it with the fixed
+    journal that ``scripts/seed_demo.py`` fills.
+    """
+    override = getattr(request.app.state, "journal_id_override", None)
+    if override:
+        return override
+    value = request.headers.get("x-journal-id", "")
+    if not _JOURNAL_ID.fullmatch(value):
+        raise HTTPException(400, "X-Journal-Id must be 32 lowercase hex characters.")
+    return value
 
 
 def current_settings(request: Request) -> Settings:

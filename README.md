@@ -20,7 +20,7 @@ Jump to: [Features](#features) · [Tech stack](#tech-stack) · [Configuration](#
 - **Manual entry** — add a row by hand when you already know the numbers, or when the model is unreachable
 - Every parsed name and number stays editable, and totals are recomputed from the rows you can see
 - Failures surface as typed messages with a retry; `?sample=1` previews a resolved result without a model call
-- One journal store: the Compose view and the Food Journal both read and write the same `data.json` through `app/journal/store.py`
+- Each browser gets its own journal, kept in MongoDB Atlas and reached with an id this browser holds; the Compose view and the Food Journal both read and write it through `app/journal/store.py`
 - A committed evaluation harness scores `/api/parse` against reference calorie ranges, so claims about the model's accuracy carry a table and a date
 
 ## Tech stack
@@ -33,7 +33,7 @@ Jump to: [Features](#features) · [Tech stack](#tech-stack) · [Configuration](#
 | API surface | REST/JSON endpoints for parsing, cooking, recipe images, and journal CRUD |
 | LLM providers | OpenRouter by default; any OpenAI-compatible endpoint for local inference — Ollama (default), llama.cpp, LM Studio, vLLM |
 | Image generation | stable-diffusion.cpp CUDA build serving SDXL-Turbo through an AUTOMATIC1111-compatible `/sdapi/v1/txt2img` API |
-| Persistence | One local JSON document (`data.json`) with validation, atomic `os.replace` writes, and a cross-process lock file — no database |
+| Persistence | MongoDB Atlas (`pymongo`), one document per browser journal, with validation and an optimistic-concurrency counter — no local file |
 | Configuration | One typed `pydantic-settings` object for `.env` and the process environment, with process variables taking priority and mtime-based live reload |
 | Testing | Python `unittest` for the store and FastAPI routes, plus Node's built-in runner for the browser config loader and TypeScript's `checkJs` mode for the browser scripts; `httpx` provides the `TestClient` transport |
 | Evaluation | A committed harness in `evals/` with fixed meal fixtures, reference calorie ranges, and Markdown/JSON results |
@@ -52,11 +52,13 @@ Install the backend dependencies once:
 python -m pip install -r requirements.txt
 ```
 
-The journal store needs nothing beyond the standard library. Recipe images are optional and use a separate local service (see below). The Node packages are development tooling only: neither the server nor the pages load them at runtime.
+The journal store needs a MongoDB connection string in `MONGODB_URI` (an Atlas M0 cluster is enough); a missing value fails startup with a message naming it. Recipe images are optional and use a separate local service (see below). The Node packages are development tooling only: neither the server nor the pages load them at runtime.
 
 ## Configuration
 
 Runtime settings live in `.env` (start from `.env.example`) and are parsed into one typed `app.config.Settings` object. Process environment variables override the file for every setting, including the image options and the legacy `OPENROUTER_TOKEN` / `OPEN_ROUTER_API_KEY` key aliases. The server compares the file's mtime on each request, so an edit applies to the next request without a restart. Invalid values — an unknown provider, a non-numeric image size, an out-of-range dimension — stop startup with a message naming the setting. `LLM_TIMEOUT` is the exception: a missing, invalid, or non-positive value falls back to the provider default (30 seconds for parsing and 45 for recipes on OpenRouter, 180 for a local model).
+
+`MONGODB_URI` is the Atlas connection string and is required; `MONGODB_DB` defaults to `nutriparse`. Keep the string in the environment or a local `.env`, never in Git. The client is created once at startup and closed on shutdown; a missing URI fails startup with a message naming it. There is no startup ping, so a transient Atlas blip does not fail a deploy.
 
 Both pages read the effective parse, cook, and image timeouts from `GET /api/config` at startup; the same endpoint also reports the active provider and model. Each client waits 10 seconds longer than the server's value, so a slow provider gets the server's error rather than a premature client abort, and the request-details panel shows the timeout it used. If the config call fails, AI calls fall back to a 300-second safety net and the page says so; journal reads and writes are unaffected. `LOCAL_IMAGE_TIMEOUT` overrides the image service's 240-second per-call limit, and the reported image timeout follows it.
 
@@ -106,32 +108,31 @@ Add `?sample=1` or `?sample=cook` to preview either resolved Compose state witho
 
 ### Demo data for screenshots
 
-`scripts/seed_demo.py` writes a week of sample entries to `data.demo.json`, dated relative to today, so the Journal view has a populated today card and several days of history — including one day over the goal and one light day. Your real `data.json` is never read or written. The Journal screenshot above came from this demo file.
+`scripts/seed_demo.py` writes a week of sample entries to the `nutriparse_demo` database, dated relative to today, so the Journal view has a populated today card and several days of history — including one day over the goal and one light day. Your real `nutriparse` database is never read or written. The Journal screenshot above came from this demo data.
 
 ```powershell
 python scripts/seed_demo.py
 python -m app.main --demo
 ```
 
-Open http://localhost:8100/?view=journal. `--demo` only changes which file the journal API serves; AI, Cook and images behave as usual. Re-run `scripts/seed_demo.py` whenever you want the sample dates to move up to the current day, and delete `data.demo.json` when you are done. Start the server without `--demo` to go back to your real journal.
+Open http://localhost:8100/?view=journal. `--demo` only changes which database and journal the journal API serves; AI, Cook and images behave as usual. Re-run `scripts/seed_demo.py` whenever you want the sample dates to move up to the current day. Start the server without `--demo` to go back to your real journal.
 
 ### Where the journal lives
 
-The server owns `data.json`; the browser keeps no copy of its own. Saving in Compose posts to the server, every mutation answers with the whole updated document, and both views render from that answer. `app/journal/store.py` holds the rules the API applies — validation, id assignment, atomic writes.
+Each browser owns one journal. On the first visit the page creates a 32-hex id with `crypto.getRandomValues`, stores it in `localStorage` under `np_journal_id`, and sends it as `X-Journal-Id` on every journal request. The id is the only key: clearing browser storage loses that journal permanently, and two browsers never share one. The History view has a **Restore, import, or delete this journal** panel: paste an id to open the same journal elsewhere (or use `?journal=<id>`), import a `data.json` file from the earlier version, or delete this browser's journal. `app/journal/store.py` holds the rules the API applies — validation, id assignment, lazy creation, revision-guarded writes.
 
 | Endpoint | Body | Returns |
 | --- | --- | --- |
-| `GET /api/journal` | — | the whole document |
+| `GET /api/journal` | — | the whole document; an unknown but well-formed id is created with the default goal |
 | `POST /api/journal/entries` | `{"entries": [ … ]}` | the document including the new rows, each with a server-assigned id |
 | `PUT /api/journal/entries/<id>` | `{"entries": [ … ]}` | the document with that row replaced; the first new row keeps the id |
 | `DELETE /api/journal/entries/<id>` | — | the document without that row |
 | `POST /api/journal/goal` | `{"calorie_goal": 2200}` | the document with the new goal |
+| `DELETE /api/journal` | — | an empty document; only the calling journal is wiped |
 
-Writes are validated before they touch the file and then swapped in atomically, so a crash mid-write cannot leave a half-written journal behind. A `data.json` that cannot be parsed is reported as an HTTP 500 rather than quietly replaced with a fresh one. Journal writes also check the request's `Origin` and refuse cross-site ones with 403; reads stay open because they change nothing.
+Every request needs an `X-Journal-Id`; a missing or malformed one is refused with 400 rather than defaulting to another journal. Writes are validated before they reach MongoDB, then applied with a `rev`-guarded read-modify-write that retries three times before returning 503, so two writers cannot drop each other's rows. Journal writes also check the request's `Origin` against the request's own `Host` and refuse cross-site ones with 403; comparing the two means an https reverse proxy works without deriving a port from `request.url.scheme`. Reads stay open because they change nothing.
 
-Writers are serialised twice: a thread lock covers requests inside one server process, and a sidecar lock file (`data.json.lock`, created next to the journal and ignored by Git) covers separate processes — two Uvicorn workers, or a server and a script. A writer that cannot take the file lock within 10 seconds fails with HTTP 503 instead of overwriting another process's rows. Readers take no lock, because `os.replace` only ever exposes a complete document. The lock file stays behind with a single byte in it; delete it while no server is running if you want a clean directory.
-
-Entries saved by an earlier version of the web app, in `localStorage` under `ct_data`, are moved up once on the first page load: valid rows are posted to the server and removed from the browser, and any row the server would reject is left in the browser rather than dropped. The Food Journal is the main app at http://localhost:8100/ and reads and writes the same store. One caveat worth stating: the migration assumes one tab is open, so two tabs loading at the same instant can each claim the same browser rows and you may see duplicates once.
+Entries saved by an earlier version of the web app, in `localStorage` under `ct_data`, are moved up once on the first page load into that browser's own journal: valid rows are posted and removed from the browser, and any row the server would reject is left in the browser rather than dropped. One caveat worth stating: the migration assumes one tab is open, so two tabs loading at the same instant can each claim the same browser rows and you may see duplicates once.
 
 ### Local recipe images (NVIDIA CUDA)
 
@@ -284,7 +285,7 @@ path, and image data and API credentials are never logged. Each log rotates at
 
 ## Tests
 
-The journal store has a stdlib suite covering validation, portions, atomic writes, entry updates, legacy numeric ids, corrupt files, and concurrent writers in both threads and separate processes. The FastAPI surface has a second suite covering the static allowlist, the journal round trip and update path, body validation, same-origin checks on writes, the OpenAPI request/response schemas, the `/api/config` timeouts and headers, and the rules that trim and validate model output. The async transport is tested with a stubbed `httpx.MockTransport` for 429/5xx retries, the stated backoff, no retry on other 4xx, the three-model and one-image concurrency caps, and disconnect cancellation. The recipe-image cache is tested for its first write, repeat hits, dimension-aware hashes, immutable response headers, and unknown hashes. The browser config loader's client-side waits and 300-second fallback run under Node's built-in test runner; that test skips only when Node is not installed.
+The journal store runs against `mongomock`, with no database server needed: validation, portions, lazy creation, legacy numeric ids, malformed documents, goal changes, per-journal isolation, revision-race retries and the 503 path, and concurrent writers. The FastAPI surface has a second suite covering the static allowlist, the journal round trip and update path, per-browser id validation and isolation, delete, body validation, same-origin checks behind an https proxy, the OpenAPI request/response schemas, the `/api/config` timeouts and headers, and the rules that trim and validate model output. The async transport is tested with a stubbed `httpx.MockTransport` for 429/5xx retries, the stated backoff, no retry on other 4xx, the three-model and one-image concurrency caps, and disconnect cancellation. The recipe-image cache is tested for its first write, repeat hits, dimension-aware hashes, immutable response headers, and unknown hashes. The browser config loader's client-side waits and 300-second fallback run under Node's built-in test runner; that test skips only when Node is not installed.
 
 ```powershell
 python -m pip install -r requirements-dev.txt
@@ -331,7 +332,7 @@ app/
   config.py            paths, request limits, typed settings, live .env reload
   logging_config.py    rotating model and image logs
   main.py              FastAPI factory, router wiring, server entry point
-  journal/store.py     shared journal: validation, atomic writes, cross-process lock
+  journal/store.py     per-browser journals: validation, Mongo documents, revision guard
   services/            llm.py, nutrition.py, recipes.py, images.py, transport.py
   web/
     dependencies.py    JSON body rules, same-origin guard, journal/LLM helpers
@@ -353,22 +354,22 @@ web/
   fonts/               self-hosted woff2 for the Food Journal, with OFL licences
   assets/              favicon files
 scripts/
-  seed_demo.py         writes data.demo.json for screenshots
+  seed_demo.py         seeds the nutriparse_demo database for screenshots
   setup_image_generator.bat / start_image_generator.bat  CUDA image service
   start_llm.bat        starts a local llama.cpp server with the expected settings
 tests/                 store, asset-link, settings, FastAPI, browser config-loader, and JS type-check tests
 evals/                 parse evaluation harness, fixtures, and committed results
 screenshots/           the screenshots used in this README
-requirements.txt       backend dependencies (FastAPI, Uvicorn, pydantic-settings, httpx)
-requirements-dev.txt   installs the runtime requirements for the test suite
+requirements.txt       backend dependencies (FastAPI, Uvicorn, pydantic-settings, httpx, pymongo)
+requirements-dev.txt   adds mongomock for the store tests
 package.json           dev-only Node manifest for the JavaScript type check
 package-lock.json      committed lockfile for the type-check toolchain
 tsconfig.json          the Compose page's script graph
 tsconfig.base.json     shared TypeScript options for checking JavaScript
 tsconfig.food-journal.json  the Food Journal's script graph
-data.json              the journal, shared by the Compose view and the Food Journal (created on first write; ignored by Git)
+data.json              an old local journal, imported by hand from the History view (ignored by Git)
 image-cache/           generated recipe PNGs keyed by content hash (ignored by Git; delete to clear)
-.env                   your OpenRouter API key (create from `.env.example`; do not commit)
+.env                   your OpenRouter key and MONGODB_URI (create from `.env.example`; do not commit)
 .image-tools/, models/ downloaded image runtime and models (ignored by Git)
 .llm-tools/            downloaded llama.cpp runtime (ignored by Git)
 ```

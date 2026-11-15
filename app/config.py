@@ -144,6 +144,10 @@ class Settings(BaseSettings):
     local_image_height: int = Field(default=DEFAULT_IMAGE_HEIGHT, ge=64, le=2048)
     local_image_steps: int = Field(default=DEFAULT_IMAGE_STEPS, ge=1, le=100)
 
+    # Required by the server, but empty here so tests can inject a database.
+    mongodb_uri: str = ""
+    mongodb_db: str = "nutriparse"
+
     @classmethod
     def settings_customise_sources(
         cls,
@@ -244,6 +248,14 @@ class Settings(BaseSettings):
         # A blank URL means "not configured", which keeps the image route's
         # distinct "unavailable" message; an absent value uses the default.
         return str(value or "").strip()
+
+    @field_validator("mongodb_uri", "mongodb_db", mode="before")
+    @classmethod
+    def _mongo_text(cls, value, info):
+        text = str(value or "").strip()
+        if info.field_name == "mongodb_db" and not text:
+            return "nutriparse"
+        return text
 
     @property
     def image_generation_enabled(self) -> bool:

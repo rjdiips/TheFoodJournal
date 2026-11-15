@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from ...journal import store
-from ..dependencies import json_body, require_same_origin, write_journal
+from ..dependencies import journal_id, json_body, require_same_origin, write_journal
 from ..schemas import ApiError, EntriesRequest, GoalRequest, JournalDocument
 
 router = APIRouter(prefix="/api/journal", tags=["journal"])
@@ -22,41 +22,67 @@ _DOCUMENT = {
 
 
 @router.get("", **_DOCUMENT)
-def read_journal(request: Request):
+def read_journal(request: Request, journal_id: str = Depends(journal_id)):
     try:
-        return store.load(request.app.state.store_path)
+        return store.load(request.app.state.mongo_db, journal_id)
     except store.StoreError as error:
         raise HTTPException(500, str(error)) from error
 
 
+@router.delete("", **_DOCUMENT)
+def delete_journal(request: Request, journal_id: str = Depends(journal_id)):
+    require_same_origin(request)
+    return write_journal(
+        request,
+        lambda: store.wipe(request.app.state.mongo_db, journal_id),
+    )
+
+
 @router.post("/entries", dependencies=[Depends(json_body)], **_DOCUMENT)
-def add_journal_entries(request: Request, payload: EntriesRequest):
+def add_journal_entries(
+    request: Request,
+    payload: EntriesRequest,
+    journal_id: str = Depends(journal_id),
+):
     require_same_origin(request)
     return write_journal(
         request,
         lambda: store.add_entries(
-            request.app.state.store_path,
+            request.app.state.mongo_db,
+            journal_id,
             [entry.model_dump() for entry in payload.entries],
         ),
     )
 
 
 @router.post("/goal", dependencies=[Depends(json_body)], **_DOCUMENT)
-def set_journal_goal(request: Request, payload: GoalRequest):
+def set_journal_goal(
+    request: Request,
+    payload: GoalRequest,
+    journal_id: str = Depends(journal_id),
+):
     require_same_origin(request)
     return write_journal(
         request,
-        lambda: store.set_goal(request.app.state.store_path, payload.calorie_goal),
+        lambda: store.set_goal(
+            request.app.state.mongo_db, journal_id, payload.calorie_goal
+        ),
     )
 
 
 @router.put("/entries/{entry_id}", dependencies=[Depends(json_body)], **_DOCUMENT)
-def update_journal_entry(entry_id: str, request: Request, payload: EntriesRequest):
+def update_journal_entry(
+    entry_id: str,
+    request: Request,
+    payload: EntriesRequest,
+    journal_id: str = Depends(journal_id),
+):
     require_same_origin(request)
     return write_journal(
         request,
         lambda: store.update_entry(
-            request.app.state.store_path,
+            request.app.state.mongo_db,
+            journal_id,
             entry_id,
             [entry.model_dump() for entry in payload.entries],
         ),
@@ -65,10 +91,16 @@ def update_journal_entry(entry_id: str, request: Request, payload: EntriesReques
 
 
 @router.delete("/entries/{entry_id}", **_DOCUMENT)
-def delete_journal_entry(entry_id: str, request: Request):
+def delete_journal_entry(
+    entry_id: str,
+    request: Request,
+    journal_id: str = Depends(journal_id),
+):
     require_same_origin(request)
     return write_journal(
         request,
-        lambda: store.delete_entry(request.app.state.store_path, entry_id),
+        lambda: store.delete_entry(
+            request.app.state.mongo_db, journal_id, entry_id
+        ),
         missing_is_404=True,
     )

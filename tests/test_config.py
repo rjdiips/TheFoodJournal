@@ -91,6 +91,8 @@ class TestSettingsDefaults(unittest.TestCase):
         self.assertEqual(settings.local_image_width, DEFAULT_IMAGE_WIDTH)
         self.assertEqual(settings.local_image_height, DEFAULT_IMAGE_HEIGHT)
         self.assertEqual(settings.local_image_steps, DEFAULT_IMAGE_STEPS)
+        self.assertEqual(settings.mongodb_uri, "")
+        self.assertEqual(settings.mongodb_db, "nutriparse")
 
     def test_blank_file_values_fall_back_but_empty_reasoning_is_kept(self):
         with tempfile.TemporaryDirectory() as tmp, isolated_environment():
@@ -107,7 +109,8 @@ class TestSettingsDefaults(unittest.TestCase):
                 "LOCAL_IMAGE_GENERATION_ENABLED=\n"
                 "LOCAL_IMAGE_WIDTH=\n"
                 "LOCAL_IMAGE_HEIGHT=\n"
-                "LOCAL_IMAGE_STEPS=\n",
+                "LOCAL_IMAGE_STEPS=\n"
+                "MONGODB_DB=\n",
                 encoding="utf-8",
             )
             settings = Settings(_env_file=path)
@@ -125,6 +128,8 @@ class TestSettingsDefaults(unittest.TestCase):
         self.assertEqual(settings.local_image_width, DEFAULT_IMAGE_WIDTH)
         self.assertEqual(settings.local_image_height, DEFAULT_IMAGE_HEIGHT)
         self.assertEqual(settings.local_image_steps, DEFAULT_IMAGE_STEPS)
+        self.assertEqual(settings.mongodb_uri, "")
+        self.assertEqual(settings.mongodb_db, "nutriparse")
 
     def test_image_url_blank_means_not_configured(self):
         with isolated_environment():
@@ -153,6 +158,8 @@ class TestSettingsPrecedence(unittest.TestCase):
             "local_image_width": 111,
             "local_image_height": 222,
             "local_image_steps": 7,
+            "mongodb_uri": "mongodb://file-host",
+            "mongodb_db": "file-db",
         }
         env_values = {
             "LLM_PROVIDER": "openrouter",
@@ -171,6 +178,8 @@ class TestSettingsPrecedence(unittest.TestCase):
             "LOCAL_IMAGE_WIDTH": "333",
             "LOCAL_IMAGE_HEIGHT": "444",
             "LOCAL_IMAGE_STEPS": "9",
+            "MONGODB_URI": "mongodb://env-host",
+            "MONGODB_DB": "env-db",
         }
         with tempfile.TemporaryDirectory() as tmp, isolated_environment(**env_values):
             path = Path(tmp) / ".env"
@@ -193,6 +202,8 @@ class TestSettingsPrecedence(unittest.TestCase):
         self.assertEqual(settings.local_image_width, 333)
         self.assertEqual(settings.local_image_height, 444)
         self.assertEqual(settings.local_image_steps, 9)
+        self.assertEqual(settings.mongodb_uri, "mongodb://env-host")
+        self.assertEqual(settings.mongodb_db, "env-db")
 
     def test_the_file_is_used_when_the_process_environment_is_silent(self):
         with tempfile.TemporaryDirectory() as tmp, isolated_environment():
