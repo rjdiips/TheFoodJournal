@@ -1,6 +1,6 @@
-# NutriParse
+# The Food Journal
 
-**LLM Nutrition & Recipe Service**
+**A daily food journal, with LLM nutrition and recipe estimation**
 
 Turn free text about food into structured, validated nutrition data. A prompt-first web app with optional AI estimation and recipe generation from OpenRouter or any local OpenAI-compatible model.
 
@@ -69,7 +69,7 @@ New files are served from `/assets/`, which mounts only `web/`; source, `.env`, 
 
 ## Tech stack
 
-| Layer | What NutriParse uses |
+| Layer | What The Food Journal uses |
 | --- | --- |
 | Language | Python 3.10+ for the API, store, and evaluation harness; vanilla JavaScript in the browser |
 | Backend | FastAPI on Uvicorn, with Starlette and Pydantic underneath; one shared `httpx` async client for provider calls |
