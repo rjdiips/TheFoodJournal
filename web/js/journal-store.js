@@ -22,7 +22,7 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const value = (n) => Math.max(0, Number(n) || 0);
 
 /** A fresh 32-hex id from the browser's crypto source. @returns {string} */
-export function newJournalId() {
+function newJournalId() {
   const bytes = new Uint8Array(16);
   crypto.getRandomValues(bytes);
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');

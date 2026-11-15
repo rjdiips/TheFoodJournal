@@ -170,15 +170,11 @@
         <p id="noResults" class="a-empty" hidden>No entries match that search.</p>
 
         <details class="a-restore">
-          <summary>Restore, import, or delete this journal</summary>
-          <p class="a-restore__note">This browser keeps its own journal. Save its id to open the same record in another browser, or import the JSON file from the earlier version.</p>
+          <summary>Restore or delete this journal</summary>
+          <p class="a-restore__note">This browser keeps its own journal. Save its id to open the same record in another browser.</p>
           <label class="field" for="journalIdInput"><span>Journal id</span><input id="journalIdInput" maxlength="32" autocomplete="off" spellcheck="false" /></label>
           <div class="a-restore__actions">
             <button id="restoreIdBtn" class="btn-line" type="button">Open this journal</button>
-          </div>
-          <label class="field" for="journalFile"><span>Import a journal JSON file</span><input id="journalFile" type="file" accept="application/json,.json" /></label>
-          <div class="a-restore__actions">
-            <button id="importJournalBtn" class="btn-line" type="button">Import as a new journal</button>
             <button id="deleteJournalBtn" class="text-btn text-btn--danger" type="button">Delete this journal</button>
           </div>
           <p class="a-editor-note" id="restoreStatus" role="status" aria-live="polite"></p>
@@ -247,6 +243,12 @@
 </div>
 
 <div id="toast" class="toast" aria-live="polite" aria-atomic="true"></div>
+
+<div id="undoBar" class="undo" hidden>
+  <span class="undo__text" aria-live="polite">Deleted <em id="undoName"></em></span>
+  <button id="undoBtn" class="text-btn" type="button">Undo</button>
+  <i class="undo__timer" aria-hidden="true"></i>
+</div>
 
 <script type="module" src="/assets/js/food-journal.js"></script>
 </body>

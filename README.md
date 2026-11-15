@@ -119,7 +119,7 @@ Open http://localhost:8100/?view=journal. `--demo` only changes which database a
 
 ### Where the journal lives
 
-Each browser owns one journal. On the first visit the page creates a 32-hex id with `crypto.getRandomValues`, stores it in `localStorage` under `np_journal_id`, and sends it as `X-Journal-Id` on every journal request. The id is the only key: clearing browser storage loses that journal permanently, and two browsers never share one. The History view has a **Restore, import, or delete this journal** panel: paste an id to open the same journal elsewhere (or use `?journal=<id>`), import a `data.json` file from the earlier version into a fresh journal, or delete this browser's journal. An import is only adopted once every row is written, so a failed import leaves the journal you were reading untouched.
+Each browser owns one journal. On the first visit the page creates a 32-hex id with `crypto.getRandomValues`, stores it in `localStorage` under `np_journal_id`, and sends it as `X-Journal-Id` on every journal request. The id is the only key: clearing browser storage loses that journal permanently, and two browsers never share one. The History view has a **Restore or delete this journal** panel: paste an id to open the same journal elsewhere (or use `?journal=<id>`), or delete this browser's journal.
 
 | Endpoint | Body | Returns |
 | --- | --- | --- |
@@ -367,7 +367,6 @@ package-lock.json      committed lockfile for the type-check toolchain
 tsconfig.json          the Compose page's script graph
 tsconfig.base.json     shared TypeScript options for checking JavaScript
 tsconfig.food-journal.json  the Food Journal's script graph
-data.json              an old local journal, imported by hand from the History view (ignored by Git)
 image-cache/           generated recipe PNGs keyed by content hash (ignored by Git; delete to clear)
 .env                   your OpenRouter key and MONGODB_URI (create from `.env.example`; do not commit)
 .image-tools/, models/ downloaded image runtime and models (ignored by Git)

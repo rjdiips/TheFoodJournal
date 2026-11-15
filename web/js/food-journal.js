@@ -4,7 +4,7 @@
 import { Config } from './config-module.js';
 import {
   read, addEntries, updateEntries, removeEntry, setGoal, claimBrowserEntries,
-  ensureJournalId, setJournalId, newJournalId, wipeJournal,
+  ensureJournalId, setJournalId, wipeJournal,
 } from './journal-store.js';
 
 const defaultData=()=>({calorie_goal:2000, entries:[]});
@@ -291,6 +291,50 @@ function toast(msg,kind='success'){
   clearTimeout(toastTid);
   toastTid=setTimeout(()=>{ t.classList.remove('show'); }, 2500);
 }
+
+/* Deleting is immediate; the bar offers six seconds to put the entry back.
+   Undo re-adds the entry through the server, so it returns with a new id. */
+let undoTid=0;
+let undoEntry=null;
+function hideUndo(){
+  clearTimeout(undoTid);
+  const bar=document.getElementById('undoBar');
+  bar.hidden=true;
+  bar.classList.remove('is-running');
+}
+function offerUndo(entry){
+  const bar=document.getElementById('undoBar');
+  undoEntry=entry;
+  document.getElementById('undoName').textContent='“'+String(entry.name||'')+'”';
+  bar.hidden=false;
+  bar.classList.remove('is-running');
+  void bar.offsetWidth; /* restart the drain so a second delete starts a fresh six seconds */
+  bar.classList.add('is-running');
+  clearTimeout(undoTid);
+  undoTid=setTimeout(hideUndo,6000);
+}
+document.getElementById('undoBtn').addEventListener('click',async()=>{
+  const entry=undoEntry;
+  undoEntry=null;
+  hideUndo();
+  if(!entry) return;
+  try{
+    applyData(await addEntries([{
+      name:String(entry.name||''),
+      portion:String(entry.portion||''),
+      calories:entry.calories,
+      protein:entry.protein,
+      carbs:entry.carbs,
+      fat:entry.fat,
+      meal:entry.meal,
+      date:entry.date,
+    }]));
+    render();
+    toast('Restored “'+String(entry.name||'')+'”.');
+  }catch(error){
+    toast('Could not restore: '+error.message,'error');
+  }
+});
 
 /* ---------- compose: describe a meal, review the items, save ---------- */
 
@@ -706,16 +750,41 @@ function editEntry(id){
   if(save) save.textContent='Save changes';
 }
 
+/* The row leaves the way the prototype shows: a short drift right, then the
+   gap closes. Reduced-motion users get the same end state without the motion. */
+function slideOutRow(row){
+  if(!row || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return Promise.resolve();
+  return row.animate([
+    {transform:'translateX(0)',opacity:1},
+    {transform:'translateX(26px)',opacity:0},
+  ],{duration:240,easing:'cubic-bezier(.4,0,1,1)',fill:'forwards'})
+    .finished
+    .then(()=>{
+      row.style.overflow='hidden';
+      const cs=getComputedStyle(row);
+      const height=row.offsetHeight;
+      return row.animate([
+        {height:height+'px',paddingTop:cs.paddingTop,paddingBottom:cs.paddingBottom,borderBottomWidth:cs.borderBottomWidth},
+        {height:'0px',paddingTop:'0px',paddingBottom:'0px',borderBottomWidth:'0px'},
+      ],{duration:260,easing:'cubic-bezier(.4,0,.2,1)',fill:'forwards'}).finished;
+    });
+}
+
 async function deleteEntry(id){
   const entry=data.entries.find(e=>String(e.id)===String(id));
   if(!entry) return;
-  if(!confirm(`Delete "${entry.name}" (${entry.date})? This cannot be undone.`)) return;
+  const row=/** @type {HTMLElement | null} */ (document.querySelector(`#entryBody .a-row[data-id="${id}"]`));
+  const exit=slideOutRow(row);
   try{
     applyData(await removeEntry(id));
   }catch(error){
     toast('Could not delete: '+error.message,'error');
+    /* The row may already be mid-exit; put it back. */
+    render();
     return;
   }
+  offerUndo(entry);
+  await exit;
   /* Do not leave the editor pointed at a row that no longer exists. */
   if(parsedState.editId!==null && String(parsedState.editId)===String(id)) clearParsed();
   render();
@@ -868,24 +937,9 @@ document.getElementById('saveGoal').addEventListener('click', async ()=>{
 
 function render(){ renderEntries(); renderSummary(); renderGoal(); }
 
-/* ---------- the journal id: restore it, import a file, or start over ---------- */
-
-function importRow(entry){
-  const row=entry && typeof entry==='object'?entry:{};
-  return {
-    name:String(row.name||'').trim()||'Untitled',
-    portion:String(row.portion||'').trim(),
-    calories:num(row.calories),
-    protein:num(row.protein),
-    carbs:num(row.carbs),
-    fat:num(row.fat),
-    meal:['breakfast','lunch','dinner','snack'].includes(row.meal)?row.meal:'snack',
-    date:/^\d{4}-\d{2}-\d{2}$/.test(String(row.date||''))?row.date:today(),
-  };
-}
+/* ---------- the journal id: restore it or delete the journal ---------- */
 
 const journalIdInput=/** @type {HTMLInputElement} */ (document.getElementById('journalIdInput'));
-const journalFile=/** @type {HTMLInputElement} */ (document.getElementById('journalFile'));
 const restoreStatus=document.getElementById('restoreStatus');
 journalIdInput.value=ensureJournalId();
 
@@ -899,40 +953,6 @@ document.getElementById('restoreIdBtn').addEventListener('click',async()=>{
     toast('Journal restored.','success');
   }catch(error){
     restoreStatus.textContent=error.message;
-  }
-});
-
-document.getElementById('importJournalBtn').addEventListener('click',async()=>{
-  const file=journalFile.files&&journalFile.files[0];
-  if(!file){ restoreStatus.textContent='Choose a journal JSON file first.'; return; }
-  let payload=null;
-  try{ payload=JSON.parse(await file.text()); }
-  catch(_){ restoreStatus.textContent='That file is not JSON.'; return; }
-  const entries=payload&&Array.isArray(payload.entries)?payload.entries:[];
-  if(!confirm(`Import ${entries.length} ${entries.length===1?'entry':'entries'} from ${file.name} into a fresh journal for this browser? The current journal stays on the server under its own id.`)) return;
-
-  /* Import into a new id first. A failed import leaves the journal you were
-     reading untouched, and the new one is only adopted once it is complete. */
-  const previous=ensureJournalId();
-  setJournalId(newJournalId());
-
-  restoreStatus.textContent='Importing…';
-  try{
-    let document=null;
-    for(let start=0;start<entries.length;start+=50){
-      document=await addEntries(entries.slice(start,start+50).map(importRow));
-    }
-    const goal=Number(payload&&payload.calorie_goal);
-    if(Number.isFinite(goal)&&goal>=1) document=await setGoal(Math.round(goal));
-    applyData(document||await read());
-    journalIdInput.value=ensureJournalId();
-    render();
-    restoreStatus.textContent=`Imported ${entries.length} ${entries.length===1?'entry':'entries'} into journal ${ensureJournalId()}.`;
-    toast('Journal imported.','success');
-  }catch(error){
-    setJournalId(previous);
-    journalIdInput.value=previous;
-    restoreStatus.textContent='Import failed: '+error.message;
   }
 });
 
