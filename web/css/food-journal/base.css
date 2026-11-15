@@ -194,6 +194,43 @@ button:disabled { cursor: not-allowed; opacity: .7; }
 .toast.show { opacity: 1; transform: none; }
 .toast.error { background: var(--wine); }
 
+/* Undo — deletion is immediate, with six seconds to take it back */
+.undo {
+  position: fixed;
+  z-index: 121;
+  left: 24px;
+  bottom: 84px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  max-width: 340px;
+  padding: 12px 14px 12px 18px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--ink);
+  color: #f4f1e8;
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.45;
+  box-shadow: 0 16px 38px rgba(25, 28, 22, .24);
+}
+.undo__text em { color: #f4f1e8; font-family: var(--serif); font-size: 13px; font-style: italic; }
+.undo .text-btn { color: #d9dfc8; border-bottom: 1px solid #7d8a6a; padding-bottom: 1px; }
+.undo .text-btn:hover { color: #fff; border-color: #fff; }
+.undo__timer {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 2px;
+  background: var(--sage);
+  transform: scaleX(1);
+  transform-origin: left;
+}
+.undo.is-running .undo__timer { animation: undo-drain 6s linear forwards; }
+@keyframes undo-drain { to { transform: scaleX(0); } }
+
 /* Plate studies — CSS-only food imagery */
 .plate {
   --rim: #333a2b;

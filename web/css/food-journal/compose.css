@@ -63,7 +63,6 @@
   border-radius: var(--r-lg);
   background: var(--cream);
   box-shadow: var(--shadow-card);
-  animation: rise .5s cubic-bezier(.22, .61, .36, 1) both;
 }
 .a-result__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; }
 .a-result__title { max-width: none; margin: 9px 0 0; color: var(--ink); font-family: var(--serif); font-size: 30px; font-weight: 500; letter-spacing: -.03em; line-height: 1.1; }

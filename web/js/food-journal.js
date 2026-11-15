@@ -378,7 +378,15 @@ function resetParsedTotals(){
 function revealResult(sub, kicker='The plate'){
   document.getElementById('resultKicker').textContent=kicker;
   document.getElementById('resultSub').textContent=sub;
-  document.getElementById('parseResult').hidden=false;
+  const card=document.getElementById('parseResult');
+  const wasHidden=card.hidden;
+  /* A previous save left the card collapsed inline; it starts fresh here. */
+  card.removeAttribute('style');
+  if(card.parentElement) card.parentElement.removeAttribute('style');
+  card.hidden=false;
+  /* Open after the caller has painted the rows, so the measured height is the
+     real one, and before the first paint, so the card never flashes full size. */
+  if(wasHidden) requestAnimationFrame(()=>{ animateResult(true); });
 }
 
 function buildParsedRow(item, index){
@@ -585,6 +593,55 @@ function manualRow(){
   if(last) last.focus({preventScroll:true});
 }
 
+/* The plate opens and closes with one motion: 360ms on the archive row's
+   easing, the card's box and the grid gap above it moving together, content
+   fading in over the first third and out over the last third. Before this the
+   card popped open with a rise but folded shut, so the two ends disagreed.
+   The resting state is written inline because a finished-forwards animation
+   would still apply the next time the card is shown; revealResult clears it. */
+function animateResult(open){
+  const card=document.getElementById('parseResult');
+  const reduced=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if(!card || card.hidden || reduced) return Promise.resolve();
+  const parent=card.parentElement;
+  const gap=parent ? parseFloat(getComputedStyle(parent).rowGap)||0 : 0;
+  const cs=getComputedStyle(card);
+  const height=card.offsetHeight;
+  /* Without clipping, the card's children (the footer buttons) spill out of the
+     moving white surface and paint over the paper. `contain` keeps the rows
+     inside from also expanding the document's scrollable area while the card
+     shrinks, which is what made the page jump the last few pixels at the end. */
+  card.style.overflow='hidden';
+  card.style.contain='layout paint';
+  const timing=/** @type {KeyframeAnimationOptions} */ ({duration:360,easing:'cubic-bezier(.4,0,.2,1)',fill:'forwards'});
+  const shut={height:'0px',marginTop:'0px',paddingTop:'0px',paddingBottom:'0px',borderTopWidth:'0px',borderBottomWidth:'0px'};
+  const sized={height:height+'px',marginTop:cs.marginTop,paddingTop:cs.paddingTop,paddingBottom:cs.paddingBottom,borderTopWidth:cs.borderTopWidth,borderBottomWidth:cs.borderBottomWidth};
+  /* Height and fade are separate animations: folding opacity into the same
+     keyframe list would split the height's easing curve at the fade offset and
+     put a hitch partway through. */
+  const box=card.animate(open?[shut,sized]:[sized,shut],timing);
+  const fade=card.animate(open
+    ?[{opacity:0,offset:0},{opacity:1,offset:.35},{opacity:1,offset:1}]
+    :[{opacity:1,offset:0},{opacity:1,offset:.65},{opacity:0,offset:1}],
+    {duration:360,easing:'linear',fill:'forwards'});
+  const gapAnim=gap && parent
+    ?parent.animate(open?[{rowGap:'0px'},{rowGap:gap+'px'}]:[{rowGap:gap+'px'},{rowGap:'0px'}],timing)
+    :null;
+  return Promise.all([box.finished,fade.finished,gapAnim?gapAnim.finished:Promise.resolve()]).then(()=>{
+    box.cancel();
+    fade.cancel();
+    if(gapAnim) gapAnim.cancel();
+    if(open){
+      card.style.overflow='';
+      card.style.contain='';
+      if(parent) parent.style.rowGap='';
+    }else{
+      if(parent) parent.style.rowGap='0px';
+      card.style.cssText='height:0;margin:0;padding:0;border:0;opacity:0;overflow:hidden';
+    }
+  });
+}
+
 async function saveParsed(){
   if(parsedState.busy) return;
   if(parsedState.items.length===0){
@@ -633,6 +690,7 @@ async function saveParsed(){
   toast(editing
     ? `Updated ${entries.length} ${entries.length===1?'item':'items'} on ${dateStr}.`
     : `Saved ${entries.length} ${entries.length===1?'item':'items'} to ${meal} on ${dateStr}.`,'success');
+  await animateResult(false);
   clearParsed();
   render();
 }
@@ -770,9 +828,16 @@ function slideOutRow(row){
     });
 }
 
+/* A second click on a row already being deleted used to send a second DELETE;
+   by then the entry was gone, so the server answered "That entry is no longer
+   in the journal." and the page showed it as a failure. */
+const deletesInFlight=new Set();
+
 async function deleteEntry(id){
-  const entry=data.entries.find(e=>String(e.id)===String(id));
-  if(!entry) return;
+  const key=String(id);
+  const entry=data.entries.find(e=>String(e.id)===key);
+  if(!entry || deletesInFlight.has(key)) return;
+  deletesInFlight.add(key);
   const row=/** @type {HTMLElement | null} */ (document.querySelector(`#entryBody .a-row[data-id="${id}"]`));
   const exit=slideOutRow(row);
   try{
@@ -782,6 +847,8 @@ async function deleteEntry(id){
     /* The row may already be mid-exit; put it back. */
     render();
     return;
+  }finally{
+    deletesInFlight.delete(key);
   }
   offerUndo(entry);
   await exit;

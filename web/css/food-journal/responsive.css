@@ -152,6 +152,7 @@
   .suggest-help { left: auto; right: 0; width: min(250px, calc(100vw - 36px)); transform: translate(0, -3px); }
   .suggest-info-wrap:hover .suggest-help, .suggest-info-wrap:focus-within .suggest-help { transform: translate(0, 0); }
   .toast { left: 14px; right: 14px; bottom: 16px; max-width: none; text-align: center; }
+  .undo { left: 14px; right: 14px; bottom: 72px; max-width: none; justify-content: center; }
 }
 
 @media (prefers-reduced-motion: reduce) {
