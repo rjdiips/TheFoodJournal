@@ -330,7 +330,7 @@ class TestJournal(ApiTestCase):
             json={"entries": [self.entry()]},
             headers=self.write_headers(Origin="https://evil.example"),
         )
-        self.assert_error(response, 403, "Journal writes must come from the NutriParse app")
+        self.assert_error(response, 403, "Journal writes must come from the Food Journal")
 
     def test_cross_origin_writes_are_refused(self):
         response = self.client.post(
@@ -338,7 +338,7 @@ class TestJournal(ApiTestCase):
             json={"calorie_goal": 2200},
             headers=self.write_headers(Origin="https://evil.example"),
         )
-        self.assert_error(response, 403, "Journal writes must come from the NutriParse app")
+        self.assert_error(response, 403, "Journal writes must come from the Food Journal")
         self.assertEqual(self.mongo_db[store.COLLECTION].count_documents({}), 0)
 
     def test_a_write_from_the_public_origin_is_allowed(self):

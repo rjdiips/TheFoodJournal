@@ -62,7 +62,7 @@ def require_same_origin(request):
     # from request.url.scheme would see http behind Render's TLS terminator and
     # never match the browser's https Origin.
     if urlsplit(origin).netloc.lower() != request.headers.get("host", "").lower():
-        raise HTTPException(403, "Journal writes must come from the NutriParse app")
+        raise HTTPException(403, "Journal writes must come from the Food Journal")
 
 
 _JOURNAL_ID = re.compile(r"[0-9a-f]{32}")
