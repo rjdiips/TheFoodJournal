@@ -146,7 +146,7 @@ class Settings(BaseSettings):
 
     # Required by the server, but empty here so tests can inject a database.
     mongodb_uri: str = ""
-    mongodb_db: str = "nutriparse"
+    mongodb_db: str = "calorie-tracker"
 
     @classmethod
     def settings_customise_sources(
@@ -254,7 +254,7 @@ class Settings(BaseSettings):
     def _mongo_text(cls, value, info):
         text = str(value or "").strip()
         if info.field_name == "mongodb_db" and not text:
-            return "nutriparse"
+            return "calorie-tracker"
         return text
 
     @property

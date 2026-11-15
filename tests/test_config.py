@@ -92,7 +92,7 @@ class TestSettingsDefaults(unittest.TestCase):
         self.assertEqual(settings.local_image_height, DEFAULT_IMAGE_HEIGHT)
         self.assertEqual(settings.local_image_steps, DEFAULT_IMAGE_STEPS)
         self.assertEqual(settings.mongodb_uri, "")
-        self.assertEqual(settings.mongodb_db, "nutriparse")
+        self.assertEqual(settings.mongodb_db, "calorie-tracker")
 
     def test_blank_file_values_fall_back_but_empty_reasoning_is_kept(self):
         with tempfile.TemporaryDirectory() as tmp, isolated_environment():
@@ -129,7 +129,7 @@ class TestSettingsDefaults(unittest.TestCase):
         self.assertEqual(settings.local_image_height, DEFAULT_IMAGE_HEIGHT)
         self.assertEqual(settings.local_image_steps, DEFAULT_IMAGE_STEPS)
         self.assertEqual(settings.mongodb_uri, "")
-        self.assertEqual(settings.mongodb_db, "nutriparse")
+        self.assertEqual(settings.mongodb_db, "calorie-tracker")
 
     def test_image_url_blank_means_not_configured(self):
         with isolated_environment():

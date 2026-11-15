@@ -58,7 +58,7 @@ The journal store needs a MongoDB connection string in `MONGODB_URI` (an Atlas M
 
 Runtime settings live in `.env` (start from `.env.example`) and are parsed into one typed `app.config.Settings` object. Process environment variables override the file for every setting, including the image options and the legacy `OPENROUTER_TOKEN` / `OPEN_ROUTER_API_KEY` key aliases. The server compares the file's mtime on each request, so an edit applies to the next request without a restart. Invalid values — an unknown provider, a non-numeric image size, an out-of-range dimension — stop startup with a message naming the setting. `LLM_TIMEOUT` is the exception: a missing, invalid, or non-positive value falls back to the provider default (30 seconds for parsing and 45 for recipes on OpenRouter, 180 for a local model).
 
-`MONGODB_URI` is the Atlas connection string and is required; `MONGODB_DB` defaults to `nutriparse`. Keep the string in the environment or a local `.env`, never in Git. The client is created once at startup and closed on shutdown; a missing URI fails startup with a message naming it. There is no startup ping, so a transient Atlas blip does not fail a deploy.
+`MONGODB_URI` is the Atlas connection string and is required; `MONGODB_DB` defaults to `calorie-tracker`. Keep the string in the environment or a local `.env`, never in Git. The client is created once at startup and closed on shutdown; a missing URI fails startup with a message naming it. There is no startup ping, so a transient Atlas blip does not fail a deploy.
 
 Both pages read the effective parse, cook, and image timeouts from `GET /api/config` at startup; the same endpoint also reports the active provider and model. Each client waits 10 seconds longer than the server's value, so a slow provider gets the server's error rather than a premature client abort, and the request-details panel shows the timeout it used. If the config call fails, AI calls fall back to a 300-second safety net and the page says so; journal reads and writes are unaffected. `LOCAL_IMAGE_TIMEOUT` overrides the image service's 240-second per-call limit, and the reported image timeout follows it.
 
@@ -108,7 +108,7 @@ Add `?sample=1` or `?sample=cook` to preview either resolved Compose state witho
 
 ### Demo data for screenshots
 
-`scripts/seed_demo.py` writes a week of sample entries to the `nutriparse_demo` database, dated relative to today, so the Journal view has a populated today card and several days of history — including one day over the goal and one light day. Your real `nutriparse` database is never read or written. The Journal screenshot above came from this demo data.
+`scripts/seed_demo.py` writes a week of sample entries to the `nutriparse_demo` database, dated relative to today, so the Journal view has a populated today card and several days of history — including one day over the goal and one light day. Your real `calorie-tracker` database is never read or written. The Journal screenshot above came from this demo data.
 
 ```powershell
 python scripts/seed_demo.py
