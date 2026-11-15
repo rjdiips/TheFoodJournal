@@ -4,7 +4,7 @@
 import { Config } from './config-module.js';
 import {
   read, addEntries, updateEntries, removeEntry, setGoal, claimBrowserEntries,
-  readJournalId, setJournalId, wipeJournal,
+  ensureJournalId, setJournalId, newJournalId, wipeJournal,
 } from './journal-store.js';
 
 const defaultData=()=>({calorie_goal:2000, entries:[]});
@@ -887,13 +887,13 @@ function importRow(entry){
 const journalIdInput=/** @type {HTMLInputElement} */ (document.getElementById('journalIdInput'));
 const journalFile=/** @type {HTMLInputElement} */ (document.getElementById('journalFile'));
 const restoreStatus=document.getElementById('restoreStatus');
-journalIdInput.value=readJournalId();
+journalIdInput.value=ensureJournalId();
 
 document.getElementById('restoreIdBtn').addEventListener('click',async()=>{
   try{
     setJournalId(journalIdInput.value);
     applyData(await read());
-    journalIdInput.value=readJournalId();
+    journalIdInput.value=ensureJournalId();
     render();
     restoreStatus.textContent='Opened the journal for that id.';
     toast('Journal restored.','success');
@@ -913,10 +913,8 @@ document.getElementById('importJournalBtn').addEventListener('click',async()=>{
 
   /* Import into a new id first. A failed import leaves the journal you were
      reading untouched, and the new one is only adopted once it is complete. */
-  const previous=readJournalId();
-  const bytes=new Uint8Array(16);
-  crypto.getRandomValues(bytes);
-  setJournalId(Array.from(bytes,(byte)=>byte.toString(16).padStart(2,'0')).join(''));
+  const previous=ensureJournalId();
+  setJournalId(newJournalId());
 
   restoreStatus.textContent='Importing…';
   try{
@@ -927,9 +925,9 @@ document.getElementById('importJournalBtn').addEventListener('click',async()=>{
     const goal=Number(payload&&payload.calorie_goal);
     if(Number.isFinite(goal)&&goal>=1) document=await setGoal(Math.round(goal));
     applyData(document||await read());
-    journalIdInput.value=readJournalId();
+    journalIdInput.value=ensureJournalId();
     render();
-    restoreStatus.textContent=`Imported ${entries.length} ${entries.length===1?'entry':'entries'} into journal ${readJournalId()}.`;
+    restoreStatus.textContent=`Imported ${entries.length} ${entries.length===1?'entry':'entries'} into journal ${ensureJournalId()}.`;
     toast('Journal imported.','success');
   }catch(error){
     setJournalId(previous);
@@ -939,11 +937,11 @@ document.getElementById('importJournalBtn').addEventListener('click',async()=>{
 });
 
 document.getElementById('deleteJournalBtn').addEventListener('click',async()=>{
-  if(!confirm('Delete every entry in this browser’s journal? This cannot be undone.')) return;
+  if(!confirm('Delete this browser’s journal, including its daily goal? This cannot be undone.')) return;
   try{
     applyData(await wipeJournal());
     render();
-    restoreStatus.textContent='This browser’s journal is empty.';
+    restoreStatus.textContent='This browser’s journal was deleted.';
     toast('Journal deleted.','success');
   }catch(error){
     restoreStatus.textContent='Could not delete: '+error.message;

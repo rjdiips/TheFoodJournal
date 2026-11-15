@@ -21,8 +21,8 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 const value = (n) => Math.max(0, Number(n) || 0);
 
-/** @returns {string} */
-function randomJournalId() {
+/** A fresh 32-hex id from the browser's crypto source. @returns {string} */
+export function newJournalId() {
   const bytes = new Uint8Array(16);
   crypto.getRandomValues(bytes);
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
@@ -51,7 +51,7 @@ export function setJournalId(id) {
    from a link so a journal can be opened on another device or after storage
    was cleared. */
 /** @returns {string} */
-export function readJournalId() {
+export function ensureJournalId() {
   let stored = '';
   try {
     stored = localStorage.getItem(JOURNAL_ID_KEY) || '';
@@ -71,12 +71,12 @@ export function readJournalId() {
   }
   if (JOURNAL_ID.test(stored)) return stored;
   if (JOURNAL_ID.test(currentJournalId)) return currentJournalId;
-  return setJournalId(randomJournalId());
+  return setJournalId(newJournalId());
 }
 
 async function request(method, path, body) {
   /** @type {Record<string, string>} */
-  const headers = { Accept: 'application/json', 'X-Journal-Id': readJournalId() };
+  const headers = { Accept: 'application/json', 'X-Journal-Id': ensureJournalId() };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   const options = { method, headers };
   if (body !== undefined) options.body = JSON.stringify(body);

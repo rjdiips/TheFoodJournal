@@ -62,7 +62,7 @@ Runtime settings live in `.env` (start from `.env.example`) and are parsed into 
 
 Both pages read the effective parse, cook, and image timeouts from `GET /api/config` at startup; the same endpoint also reports the active provider and model. Each client waits 10 seconds longer than the server's value, so a slow provider gets the server's error rather than a premature client abort, and the request-details panel shows the timeout it used. If the config call fails, AI calls fall back to a 300-second safety net and the page says so; journal reads and writes are unaffected. `LOCAL_IMAGE_TIMEOUT` overrides the image service's 240-second per-call limit, and the reported image timeout follows it.
 
-Model and image calls share one `httpx` async client, created when the server starts. At most three model calls and one image generation run at a time, so a slow image job cannot hold a model slot and concurrent Cook runs do not starve the rest of the app. A 429 or 5xx response is retried up to three total attempts with 0.5 s and then 1.5 s between them; any other 4xx is not retried. Closing the browser tab cancels the in-flight upstream call. Journal routes stay synchronous and use their own store lock.
+Model and image calls share one `httpx` async client, created when the server starts. At most three model calls and one image generation run at a time, so a slow image job cannot hold a model slot and concurrent Cook runs do not starve the rest of the app. A 429 or 5xx response is retried up to three total attempts with 0.5 s and then 1.5 s between them; any other 4xx is not retried. Closing the browser tab cancels the in-flight upstream call. Journal routes stay synchronous, and each write is guarded by the journal document's revision counter. Uvicorn runs with `--proxy-headers` and trusts `X-Forwarded-*` from the host's proxy so `Host` and the client IP are the real ones.
 
 ## Usage
 
@@ -115,11 +115,11 @@ python scripts/seed_demo.py
 python -m app.main --demo
 ```
 
-Open http://localhost:8100/?view=journal. `--demo` only changes which database and journal the journal API serves; AI, Cook and images behave as usual. Re-run `scripts/seed_demo.py` whenever you want the sample dates to move up to the current day. Start the server without `--demo` to go back to your real journal.
+Open http://localhost:8100/?view=journal. `--demo` only changes which database and journal the journal API serves — it uses one fixed demo journal so the seeded week is what opens; AI, Cook and images behave as usual. Re-run `scripts/seed_demo.py` whenever you want the sample dates to move up to the current day. Start the server without `--demo` to go back to your real journal.
 
 ### Where the journal lives
 
-Each browser owns one journal. On the first visit the page creates a 32-hex id with `crypto.getRandomValues`, stores it in `localStorage` under `np_journal_id`, and sends it as `X-Journal-Id` on every journal request. The id is the only key: clearing browser storage loses that journal permanently, and two browsers never share one. The History view has a **Restore, import, or delete this journal** panel: paste an id to open the same journal elsewhere (or use `?journal=<id>`), import a `data.json` file from the earlier version, or delete this browser's journal. `app/journal/store.py` holds the rules the API applies — validation, id assignment, lazy creation, revision-guarded writes.
+Each browser owns one journal. On the first visit the page creates a 32-hex id with `crypto.getRandomValues`, stores it in `localStorage` under `np_journal_id`, and sends it as `X-Journal-Id` on every journal request. The id is the only key: clearing browser storage loses that journal permanently, and two browsers never share one. The History view has a **Restore, import, or delete this journal** panel: paste an id to open the same journal elsewhere (or use `?journal=<id>`), import a `data.json` file from the earlier version into a fresh journal, or delete this browser's journal. An import is only adopted once every row is written, so a failed import leaves the journal you were reading untouched.
 
 | Endpoint | Body | Returns |
 | --- | --- | --- |
@@ -130,7 +130,7 @@ Each browser owns one journal. On the first visit the page creates a 32-hex id w
 | `POST /api/journal/goal` | `{"calorie_goal": 2200}` | the document with the new goal |
 | `DELETE /api/journal` | — | an empty document; only the calling journal is wiped |
 
-Every request needs an `X-Journal-Id`; a missing or malformed one is refused with 400 rather than defaulting to another journal. Writes are validated before they reach MongoDB, then applied with a `rev`-guarded read-modify-write that retries three times before returning 503, so two writers cannot drop each other's rows. Journal writes also check the request's `Origin` against the request's own `Host` and refuse cross-site ones with 403; comparing the two means an https reverse proxy works without deriving a port from `request.url.scheme`. Reads stay open because they change nothing.
+Every request needs an `X-Journal-Id`; a missing or malformed one is refused with 400 rather than defaulting to another journal. `app/journal/store.py` holds the rules the API applies — validation, id assignment, lazy creation, revision-guarded writes. Writes are validated before they reach MongoDB, then applied with a `rev`-guarded read-modify-write that retries three times before returning 503, so two writers cannot drop each other's rows. Journal writes also check the request's `Origin` against the request's own `Host` and refuse cross-site ones with 403; comparing the two means an https reverse proxy works without deriving a port from `request.url.scheme`. Reads stay open because they change nothing.
 
 Entries saved by an earlier version of the web app, in `localStorage` under `ct_data`, are moved up once on the first page load into that browser's own journal: valid rows are posted and removed from the browser, and any row the server would reject is left in the browser rather than dropped. One caveat worth stating: the migration assumes one tab is open, so two tabs loading at the same instant can each claim the same browser rows and you may see duplicates once.
 

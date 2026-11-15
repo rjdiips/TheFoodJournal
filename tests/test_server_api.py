@@ -448,6 +448,20 @@ class TestJournal(ApiTestCase):
             1,
         )
 
+    def test_a_database_outage_is_503_on_read(self):
+        from pymongo.errors import ServerSelectionTimeoutError
+
+        class Unreachable:
+            def __getitem__(self, name):
+                return self
+
+            def find_one(self, *args, **kwargs):
+                raise ServerSelectionTimeoutError("no server")
+
+        self.app.state.mongo_db = Unreachable()
+        response = self.client.get("/api/journal", headers=self.journal_headers)
+        self.assert_error(response, 503, "The journal is busy; try again.")
+
     def test_the_journal_outlives_the_application_instance(self):
         self.post_entries(self.entry(name="Roti"))
         second = create_app(

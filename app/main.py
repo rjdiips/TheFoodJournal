@@ -101,6 +101,9 @@ def main():
         app.state.journal_id_override = store.DEFAULT_JOURNAL_ID
         app.state.mongo_db_name = "nutriparse_demo"
     settings = app.state.settings_provider.current()
+    if not settings.mongodb_uri:
+        print("MONGODB_URI is not configured; set it in .env or the environment.")
+        return
     llm = settings.llm(30)
     if llm.provider == "openrouter" and not llm.api_key:
         print("Warning: OPENROUTER_API_KEY is not configured; AI features will fail.")

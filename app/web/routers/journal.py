@@ -25,6 +25,8 @@ _DOCUMENT = {
 def read_journal(request: Request, journal_id: str = Depends(journal_id)):
     try:
         return store.load(request.app.state.mongo_db, journal_id)
+    except store.StoreBusy as error:
+        raise HTTPException(503, str(error)) from error
     except store.StoreError as error:
         raise HTTPException(500, str(error)) from error
 
