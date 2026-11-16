@@ -56,6 +56,7 @@ export const el = {
 
   viewCompose: document.getElementById('view-compose'),
   viewJournal: document.getElementById('view-journal'),
+  viewSettings: document.getElementById('view-settings'),
   manual: document.getElementById('manualBtn'),
   inspectorSummary: document.getElementById('inspectorSummary'),
   inspectorRawLabel: document.getElementById('inspectorRawLabel'),
@@ -249,7 +250,11 @@ export function syncPanels() {
 
 /* ---------- views ---------- */
 
-const VIEW_TITLES = { compose: 'NutriParse — Compose', journal: 'NutriParse — Journal' };
+const VIEW_TITLES = {
+  compose: 'NutriParse — Compose',
+  journal: 'NutriParse — Journal',
+  settings: 'NutriParse — Settings',
+};
 
 /* The Journal view lives in its own module, so it registers the renderer here
    rather than the core importing it back (which would make a cycle). */
@@ -268,6 +273,7 @@ export function setView(view) {
   });
   el.viewCompose.hidden = view !== 'compose';
   el.viewJournal.hidden = view !== 'journal';
+  el.viewSettings.hidden = view !== 'settings';
   document.title = VIEW_TITLES[view] || 'NutriParse';
   if (view === 'journal') journalRenderer();
 }
@@ -277,6 +283,9 @@ export function setView(view) {
     if (state.view === button.dataset.view) return;
     setView(button.dataset.view);
     if (state.view === 'journal') el.journalTitle.focus({ preventScroll: true });
+    if (state.view === 'settings') {
+      document.getElementById('npKeyTitle')?.focus({ preventScroll: true });
+    }
   });
 });
 

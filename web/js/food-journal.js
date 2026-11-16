@@ -2,7 +2,7 @@
    config client as Compose, so neither page relies on the classic globals. */
 
 import { Config } from './config-module.js';
-import { keyHeaders, mountKeyControl, needsKey, openKeyPanel, reportKeyFailure } from './openrouter-key.js';
+import { keyHeaders, mountKeySettings, needsKey, openKeySettings, reportKeyFailure } from './openrouter-key.js';
 import {
   read, addEntries, updateEntries, removeEntry, setGoal, claimBrowserEntries,
   ensureJournalId, setJournalId, wipeJournal,
@@ -272,7 +272,7 @@ document.getElementById('conjureBtn').addEventListener('click',async()=>{
   if(!ingredients){ status.textContent='Add at least one ingredient to begin the experiment.'; document.getElementById('alchemistIngredients').focus(); return; }
   /* The key prompt depends on the config; do not race an early click. */
   await timeoutReady;
-  if(needsKey()){ openKeyPanel(); status.textContent='Add your OpenRouter key for this tab to create a meal.'; return; }
+  if(needsKey()){ openKeySettings(); status.textContent='Add your OpenRouter key for this tab to create a meal.'; return; }
   btn.disabled=true; btn.innerHTML='<span class="spinner"></span>Creating…';
   status.textContent='Reading the fridge…';
   results.replaceChildren();
@@ -558,7 +558,7 @@ async function parseMeal(){
     return;
   }
   if(needsKey()){
-    openKeyPanel();
+    openKeySettings();
     showParseError('Add your OpenRouter key for this tab to estimate nutrition.');
     return;
   }
@@ -1060,9 +1060,10 @@ async function loadTimeouts(){
     configNotice.textContent=Config.describeFallback(timeoutConfig);
     configNotice.hidden=false;
   }
-  mountKeyControl(document.getElementById('keySlot'),{
-    available:timeoutConfig.provider!=='local',
+  mountKeySettings(document.getElementById('keySlot'),{
+    provider:timeoutConfig.provider,
     keyRequired:timeoutConfig.keyRequired,
+    open:()=>activateTab('settings'),
   });
 }
 

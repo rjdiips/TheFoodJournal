@@ -8,7 +8,7 @@ import {
   el, COPY, state, setMode, setView, updateCount,
 } from '../nutriparse.js';
 import { Config } from '../config-module.js';
-import { mountKeyControl } from '../openrouter-key.js';
+import { mountKeySettings } from '../openrouter-key.js';
 import { showSample } from './samples.js';
 import { loadJournal, renderJournal } from './journal.js';
 import { repaintStepsOverflow } from './recipes.js';
@@ -37,7 +37,8 @@ async function boot() {
   if (params.has('sample')) {
     showSample(params.get('sample') === 'cook' ? 'cook' : 'estimate');
   }
-  setView(params.get('view') === 'journal' ? 'journal' : 'compose');
+  const requestedView = params.get('view');
+  setView(requestedView === 'journal' || requestedView === 'settings' ? requestedView : 'compose');
   updateCount();
 
   // The journal does not depend on the model settings, so it renders at once;
@@ -48,9 +49,10 @@ async function boot() {
       el.configNoticeMsg.textContent = Config.describeFallback(config);
       el.configNotice.hidden = false;
     }
-    mountKeyControl(el.keySlot, {
-      available: config.provider !== 'local',
+    mountKeySettings(el.keySlot, {
+      provider: config.provider,
       keyRequired: config.keyRequired,
+      open: () => setView('settings'),
     });
   });
 

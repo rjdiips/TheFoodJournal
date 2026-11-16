@@ -20,13 +20,11 @@
     <span class="mark" aria-hidden="true"></span>
     <span class="brand">NutriParse</span>
   </div>
-  <div class="topbar__right">
-    <nav class="topbar__nav" aria-label="Views">
-      <button type="button" class="viewtab is-active" data-view="compose" aria-pressed="true">Compose</button>
-      <button type="button" class="viewtab" data-view="journal" aria-pressed="false">Journal</button>
-    </nav>
-    <div id="keySlot" class="topbar__key"></div>
-  </div>
+  <nav class="topbar__nav" aria-label="Views">
+    <button type="button" class="viewtab is-active" data-view="compose" aria-pressed="true">Compose</button>
+    <button type="button" class="viewtab" data-view="journal" aria-pressed="false">Journal</button>
+    <button type="button" class="viewtab" data-view="settings" aria-pressed="false">Settings</button>
+  </nav>
 </header>
 
 <main class="page">
@@ -280,6 +278,12 @@
       </div>
     </section>
 
+  </div>
+
+  <!-- ============ settings ============ -->
+
+  <div id="view-settings" class="view" hidden>
+    <div id="keySlot"></div>
   </div>
 
 </main>
