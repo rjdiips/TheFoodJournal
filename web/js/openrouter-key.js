@@ -1,11 +1,11 @@
 /* Bring-your-own OpenRouter key.
-   One control shared by Compose and the Food Journal: a Settings tab on each
-   page. The key lives in this tab's sessionStorage, travels only on the two AI
-   calls (see keyHeaders), and is gone when the tab closes. The server never
-   reports or logs its value.
+   One control shared by Compose and the Food Journal: a Key tab on each page.
+   The key lives in this tab's sessionStorage, travels only on the two AI calls
+   (see keyHeaders), and is gone when the tab closes. The server never reports
+   or logs its value.
 
    Pages mount it once their /api/config arrives. A key failure switches to the
-   settings tab with the reason, so the page never grows a second key dialog. */
+   Key tab with the reason, so the page never grows a second key dialog. */
 
 const STORAGE_KEY = 'np_openrouter_key';
 const HEADER = 'X-OpenRouter-Key';
@@ -86,7 +86,7 @@ function paint() {
   );
 }
 
-/** Switch to the settings tab and focus the field. */
+/** Switch to the Key tab and focus the field. */
 function openKeySettings() {
   if (!mounted) return;
   paint();
@@ -94,7 +94,7 @@ function openKeySettings() {
   input?.focus();
 }
 
-/** Open the settings tab with the reason the last AI call was refused. */
+/** Open the Key tab with the reason the last AI call was refused. */
 export function showKeyProblem(message) {
   if (!mounted) return;
   problem = trimmed(message) || 'OpenRouter could not use the saved key.';
@@ -107,7 +107,7 @@ export function reportKeyFailure(status, message) {
 }
 
 /**
- * Render the key form into a page's settings section.
+ * Render the key form into a page's Key section.
  * A local-provider deployment gets a short note instead of a form.
  * @param {Element | null} slot
  * @param {{provider?: string, keyRequired?: boolean, open?: () => void}} [options]

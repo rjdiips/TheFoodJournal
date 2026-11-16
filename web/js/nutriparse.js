@@ -253,7 +253,7 @@ export function syncPanels() {
 const VIEW_TITLES = {
   compose: 'NutriParse — Compose',
   journal: 'NutriParse — Journal',
-  settings: 'NutriParse — Settings',
+  settings: 'NutriParse — Key',
 };
 
 /* The Journal view lives in its own module, so it registers the renderer here
