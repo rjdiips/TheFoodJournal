@@ -20,11 +20,13 @@
     <span class="mark" aria-hidden="true"></span>
     <span class="brand">NutriParse</span>
   </div>
-  <nav class="topbar__nav" aria-label="Views">
-    <button type="button" class="viewtab is-active" data-view="compose" aria-pressed="true">Compose</button>
-    <button type="button" class="viewtab" data-view="journal" aria-pressed="false">Journal</button>
-    <button type="button" class="viewtab" data-view="settings" aria-pressed="false">Key</button>
-  </nav>
+  <div class="topbar__right">
+    <nav class="topbar__nav" aria-label="Views">
+      <button type="button" class="viewtab is-active" data-view="compose" aria-pressed="true">Compose</button>
+      <button type="button" class="viewtab" data-view="journal" aria-pressed="false">Journal</button>
+    </nav>
+    <button type="button" class="topbar__keybtn" data-view="settings" aria-pressed="false" aria-controls="view-settings">Key</button>
+  </div>
 </header>
 
 <main class="page">
@@ -283,15 +285,14 @@
   <!-- ============ settings ============ -->
 
   <div id="view-settings" class="view" hidden>
-    <section class="settings">
-      <div class="settings__copy">
+    <section class="jhead">
+      <div>
         <span class="eyebrow">The model key</span>
-        <h1 class="settings__title" id="settingsTitle" tabindex="-1">Your key, your tab</h1>
-        <p class="settings__sub">Estimate and Cook call OpenRouter with a key you supply. It stays in this browser tab, is sent only with those two calls, and is gone when you close the tab.</p>
-        <p class="settings__note">No account and no login. The journal never needs it, and nothing here is kept by the server.</p>
+        <h1 class="jhead__title" id="settingsTitle" tabindex="-1">OpenRouter key</h1>
+        <p class="jhead__sub">Estimate and Cook call OpenRouter with a key you supply. It stays in this browser tab, is sent only with those two calls, and is gone when you close the tab.</p>
       </div>
-      <div id="keySlot"></div>
     </section>
+    <div id="keySlot"></div>
   </div>
 
 </main>

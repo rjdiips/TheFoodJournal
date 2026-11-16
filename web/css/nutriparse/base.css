@@ -68,6 +68,26 @@ body {
 
 .topbar__brand { display: flex; align-items: center; gap: 10px; }
 
+/* Kept outside the Compose/Journal switch: the key is a separate utility. */
+.topbar__right { display: flex; align-items: center; gap: 14px; }
+
+.topbar__keybtn {
+  appearance: none;
+  padding: 2px 1px;
+  border: 0;
+  border-bottom: 1px solid var(--line-strong);
+  background: none;
+  color: var(--ink-2);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 560;
+  cursor: pointer;
+  transition: color 120ms ease, border-color 120ms ease;
+}
+.topbar__keybtn:hover { color: var(--ink); border-bottom-color: var(--muted); }
+.topbar__keybtn.is-active { color: var(--accent); border-bottom-color: var(--accent); }
+.topbar__keybtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
 .mark {
   width: 18px; height: 18px;
   border-radius: 4px;
@@ -156,40 +176,30 @@ body {
   padding: 28px 24px 64px;
 }
 
-/* ---------- settings ---------- */
+/* ---------- key ---------- */
 
-.settings {
-  display: grid;
-  grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr);
-  gap: 32px;
-  align-items: start;
-}
-
-.settings__title {
-  margin: 6px 0 0;
-  font-size: 30px;
-  font-weight: 640;
-  letter-spacing: -0.025em;
-  line-height: 1.1;
-}
-
-.settings__sub {
-  margin: 10px 0 0;
-  max-width: 44ch;
-  color: var(--muted);
+/* The key page uses the Journal view's header, then a card in this surface's
+   own language: boxed field, 7px button, full-bordered messages. */
+#view-settings .jhead { margin-bottom: 14px; }
+#view-settings .npkey-settings { padding: 22px 22px 18px; }
+#view-settings .npkey-field input { border-radius: 7px; }
+#view-settings .npkey-save {
+  min-height: 0;
+  padding: 8px 15px;
+  border-radius: 7px;
+  background: var(--accent);
   font-size: 13.5px;
+  font-weight: 570;
 }
-
-.settings__note {
-  margin: 18px 0 0;
-  padding-top: 14px;
-  max-width: 40ch;
-  border-top: 1px solid var(--line);
-  color: var(--muted);
-  font-size: 12.5px;
+#view-settings .npkey-save:hover { background: var(--accent-hover); filter: none; }
+#view-settings .npkey-note {
+  border: 1px solid var(--danger-line);
+  border-radius: 7px;
+  background: var(--danger-soft);
+  color: #77301f;
 }
-
-@media (max-width: 760px) {
-  .settings { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+#view-settings .npkey-note.is-ok {
+  border-color: var(--accent-soft);
+  background: var(--accent-soft);
+  color: var(--accent);
 }
-

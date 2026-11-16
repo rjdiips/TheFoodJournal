@@ -271,6 +271,12 @@ export function setView(view) {
     button.classList.toggle('is-active', active);
     button.setAttribute('aria-pressed', active ? 'true' : 'false');
   });
+  const keyButton = document.querySelector('.topbar__keybtn');
+  if (keyButton) {
+    const active = view === 'settings';
+    keyButton.classList.toggle('is-active', active);
+    keyButton.setAttribute('aria-pressed', active ? 'true' : 'false');
+  }
   el.viewCompose.hidden = view !== 'compose';
   el.viewJournal.hidden = view !== 'journal';
   el.viewSettings.hidden = view !== 'settings';
@@ -283,10 +289,13 @@ export function setView(view) {
     if (state.view === button.dataset.view) return;
     setView(button.dataset.view);
     if (state.view === 'journal') el.journalTitle.focus({ preventScroll: true });
-    if (state.view === 'settings') {
-      document.getElementById('settingsTitle')?.focus({ preventScroll: true });
-    }
   });
+});
+
+document.querySelector('.topbar__keybtn')?.addEventListener('click', () => {
+  if (state.view === 'settings') return;
+  setView('settings');
+  document.getElementById('settingsTitle')?.focus({ preventScroll: true });
 });
 
 /* ---------- composer ---------- */
