@@ -146,7 +146,7 @@ Generated PNGs are written once under a SHA-256 hash of the normalized prompt, w
 
 ## AI suggestions setup
 
-AI nutrition suggestions need an OpenRouter API key. A visitor can paste their own into the app; it stays in that browser tab and is gone when the tab closes. The deployment can instead set `OPENROUTER_API_KEY` (and optionally `OPENROUTER_MODEL`, default `openrouter/free`) so visitors need no key. The value is never logged or returned to the browser.
+AI nutrition estimation needs an OpenRouter API key. A visitor can paste their own into the app; it stays in that browser tab and is gone when the tab closes. The deployment can instead set `OPENROUTER_API_KEY` (and optionally `OPENROUTER_MODEL`, default `openrouter/free`) so visitors need no key. The value is never logged or returned to the browser.
 
 1. Copy `.env.example` to `.env`:
 

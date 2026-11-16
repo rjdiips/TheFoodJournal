@@ -5,7 +5,7 @@ import {
   showError, hideError, PARSE_ENDPOINT, COOK_ENDPOINT, cookParts,
 } from '../nutriparse.js';
 import { clearCallDetail } from './inspector.js';
-import { keyHeaders, needsKey, openKeyPanel, showKeyProblem } from '../openrouter-key.js';
+import { keyHeaders, needsKey, openKeyPanel, reportKeyFailure } from '../openrouter-key.js';
 import { showSkeleton, resetTotals, renderItems } from './estimate.js';
 import { renderRecipes, skeletonCards, loadRecipeImage } from './recipes.js';
 import { showSample } from './samples.js';
@@ -101,9 +101,7 @@ async function submit() {
     }
 
     if (!response.ok) {
-      if (response.status === 401 || response.status === 402) {
-        showKeyProblem(payload && payload.error);
-      }
+      reportKeyFailure(response.status, payload && payload.error);
       throw Object.assign(new Error((payload && payload.error) || `HTTP ${response.status}`), {
         status: response.status,
       });

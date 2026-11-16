@@ -2,7 +2,7 @@
    config client as Compose, so neither page relies on the classic globals. */
 
 import { Config } from './config-module.js';
-import { keyHeaders, mountKeyControl, needsKey, openKeyPanel, showKeyProblem } from './openrouter-key.js';
+import { keyHeaders, mountKeyControl, needsKey, openKeyPanel, reportKeyFailure } from './openrouter-key.js';
 import {
   read, addEntries, updateEntries, removeEntry, setGoal, claimBrowserEntries,
   ensureJournalId, setJournalId, wipeJournal,
@@ -82,7 +82,7 @@ async function parseMealText(text){
     let payload=null;
     try{ payload=await resp.json(); }catch(_){ payload=null; }
     if(!resp.ok){
-      if(resp.status===401||resp.status===402) showKeyProblem(payload&&payload.error);
+      reportKeyFailure(resp.status,payload&&payload.error);
       throw Object.assign(new Error((payload&&payload.error)||('HTTP '+resp.status)),{status:resp.status});
     }
     return payload;
@@ -100,7 +100,7 @@ async function conjureRecipes(ingredients, useSoon){
     });
     if(!resp.ok){
       const err=await resp.json().catch(()=>({error:'Request failed'}));
-      if(resp.status===401||resp.status===402) showKeyProblem(err.error);
+      reportKeyFailure(resp.status,err.error);
       throw Object.assign(new Error(err.error||('HTTP '+resp.status)),{status:resp.status});
     }
     return await resp.json();
@@ -270,6 +270,8 @@ document.getElementById('conjureBtn').addEventListener('click',async()=>{
   const status=document.getElementById('alchemistStatus');
   const results=document.getElementById('recipeResults');
   if(!ingredients){ status.textContent='Add at least one ingredient to begin the experiment.'; document.getElementById('alchemistIngredients').focus(); return; }
+  /* The key prompt depends on the config; do not race an early click. */
+  await timeoutReady;
   if(needsKey()){ openKeyPanel(); status.textContent='Add your OpenRouter key for this tab to create a meal.'; return; }
   btn.disabled=true; btn.innerHTML='<span class="spinner"></span>Creating…';
   status.textContent='Reading the fridge…';
@@ -544,6 +546,9 @@ async function parseMeal(){
   if(parsedState.busy) return;
   const textInput=/** @type {HTMLTextAreaElement} */ (document.getElementById('mealText'));
   const text=textInput.value.trim();
+  /* Wait for the config first: a keyless request sent while it is in flight
+     would reach the server's no-key error instead of this tab's prompt. */
+  await timeoutReady;
   clearInlineErrors();
   hideParseError();
   if(!text){
@@ -567,7 +572,6 @@ async function parseMeal(){
   const save=/** @type {HTMLButtonElement | null} */ (document.getElementById('saveParsedBtn'));
   if(save){ save.disabled=true; save.textContent='Save to the record'; }
 
-  await timeoutReady;
   const parseWaitMs=waitMillis('parse');
   try{
     const payload=await parseMealText(text);

@@ -988,6 +988,11 @@ class TestBrowserKey(ApiTestCase):
             response, 401, "OpenRouter rejected the key. Check the key and try again."
         )
 
+    def test_a_rejected_server_key_keeps_its_previous_error(self):
+        self.status = 401
+        response = self.client.post("/api/parse", json={"text": "dal"})
+        self.assert_error(response, 502, "OpenRouter returned HTTP 401")
+
     def test_402_reports_out_of_credits(self):
         self.status = 402
         response = self.client.post(

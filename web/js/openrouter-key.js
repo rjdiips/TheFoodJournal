@@ -10,6 +10,8 @@
 
 const STORAGE_KEY = 'np_openrouter_key';
 const HEADER = 'X-OpenRouter-Key';
+/* shortcut: sessionStorage is per tab but survives a browser session restore,
+   so a restored tab can keep the key. Use memory-only storage if that matters. */
 const PLACEHOLDER_EMPTY = 'sk-or-v1-…';
 const PLACEHOLDER_SAVED = 'Paste a new key to replace the saved one';
 
@@ -23,12 +25,12 @@ const PLACEHOLDER_SAVED = 'Paste a new key to replace the saved one';
 /** @type {HTMLElement | null} */ let note = null;
 /** @type {string} */ let problem = '';
 
-const normalize = (value) => String(value || '').trim();
+const trimmed = (value) => String(value || '').trim();
 
 /** The key this tab holds, if any. @returns {string} */
 export function getKey() {
   try {
-    return normalize(sessionStorage.getItem(STORAGE_KEY)) || memoryKey;
+    return trimmed(sessionStorage.getItem(STORAGE_KEY)) || memoryKey;
   } catch {
     /* Storage can be switched off; the in-memory copy still works this tab. */
     return memoryKey;
@@ -120,8 +122,13 @@ export function openKeyPanel() {
 /** Open the drawer with the reason the last AI call was refused. */
 export function showKeyProblem(message) {
   if (!panel) return;
-  problem = normalize(message) || 'OpenRouter rejected this key.';
+  problem = trimmed(message) || 'OpenRouter could not use the saved key.';
   openKeyPanel();
+}
+
+/** Turn a 401 or 402 from either AI route into the shared key prompt. */
+export function reportKeyFailure(status, message) {
+  if (status === 401 || status === 402) showKeyProblem(message);
 }
 
 function buildPanel() {
@@ -168,7 +175,7 @@ function buildPanel() {
   scrim.addEventListener('click', close);
   panel.querySelector('form')?.addEventListener('submit', (event) => {
     event.preventDefault();
-    const value = normalize(input?.value);
+    const value = trimmed(input?.value);
     if (!value) {
       setNote('Paste your OpenRouter key first.');
       input?.focus();

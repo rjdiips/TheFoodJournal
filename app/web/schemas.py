@@ -29,7 +29,7 @@ class RuntimeConfigResponse(BaseModel):
     image_timeout_ms: int
     # True when the deployment holds no OpenRouter key, so the browser must
     # supply one. The key itself is never reported.
-    key_required: bool = False
+    key_required: bool
 
 
 # --------------------------------------------------------------- requests

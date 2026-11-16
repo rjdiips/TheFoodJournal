@@ -123,6 +123,9 @@ def ai_settings(
         return settings
     if len(key) > MAX_BROWSER_KEY_LENGTH or not key.isprintable():
         raise HTTPException(400, "That OpenRouter key does not look valid")
+    # Remember that this request failed on the visitor's own key, not the
+    # deployment's, so the error mapping below stays unchanged for the latter.
+    request.state.browser_key = True
     return settings.model_copy(update={"openrouter_api_key": key})
 
 
@@ -186,9 +189,13 @@ def write_journal(request, operation, missing_is_404=False):
     return document
 
 
-def _client_ai_error(error, llm):
-    """Map an upstream key failure to the message and status the browser needs."""
-    if isinstance(error, LLMRequestError) and llm.provider == "openrouter":
+def _client_ai_error(error, llm, own_key):
+    """Map an upstream key failure to the message and status the browser needs.
+
+    A rejected deployment key keeps the old generic error; only a key the
+    visitor supplied is theirs to check or top up.
+    """
+    if own_key and isinstance(error, LLMRequestError) and llm.provider == "openrouter":
         if error.status in (401, 403):
             return 401, "OpenRouter rejected the key. Check the key and try again."
         if error.status == 402:
@@ -221,7 +228,9 @@ async def run_ai_feature(feature, operation: Callable[[], Awaitable[dict]],
             request_id, feature, round((time.monotonic() - started) * 1000), error,
             f" diagnostic={error.diagnostic}" if isinstance(error, LLMRequestError) else "",
         )
-        status, message = _client_ai_error(error, llm)
+        status, message = _client_ai_error(
+            error, llm, getattr(request.state, "browser_key", False)
+        )
         raise HTTPException(status, message) from error
     except Exception as error:
         LOGGER.exception(

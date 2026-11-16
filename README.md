@@ -157,7 +157,7 @@ Every request needs an `X-Journal-Id`; a missing or malformed one is refused wit
 
 ## AI suggestions setup
 
-AI nutrition suggestions need an OpenRouter API key. A visitor can paste their own into the app: it stays in that browser tab, is sent only with Estimate and Cook, and is gone when the tab closes. A deployment can also set `OPENROUTER_API_KEY` (and optionally `OPENROUTER_MODEL`, default `openrouter/free`) so visitors need no key; a key pasted in the app overrides it for that tab. The value is never logged or returned to the browser. Recipe images do not use this key.
+AI nutrition estimation needs an OpenRouter API key. A visitor can paste their own into the app: it stays in that browser tab, is sent only with Estimate and Cook, and is gone when the tab closes. A deployment can also set `OPENROUTER_API_KEY` (and optionally `OPENROUTER_MODEL`, default `openrouter/free`) so visitors need no key; a key pasted in the app overrides it for that tab. The value is never logged or returned to the browser. Recipe images do not use this key.
 
 ### Local models (no cloud calls)
 
