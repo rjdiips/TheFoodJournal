@@ -284,7 +284,7 @@ export function setView(view) {
     setView(button.dataset.view);
     if (state.view === 'journal') el.journalTitle.focus({ preventScroll: true });
     if (state.view === 'settings') {
-      document.getElementById('npKeyTitle')?.focus({ preventScroll: true });
+      document.getElementById('settingsTitle')?.focus({ preventScroll: true });
     }
   });
 });

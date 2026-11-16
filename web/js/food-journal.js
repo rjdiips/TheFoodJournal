@@ -2,7 +2,7 @@
    config client as Compose, so neither page relies on the classic globals. */
 
 import { Config } from './config-module.js';
-import { keyHeaders, mountKeySettings, needsKey, openKeySettings, reportKeyFailure } from './openrouter-key.js';
+import { keyHeaders, mountKeySettings, needsKey, reportKeyFailure, showKeyProblem } from './openrouter-key.js';
 import {
   read, addEntries, updateEntries, removeEntry, setGoal, claimBrowserEntries,
   ensureJournalId, setJournalId, wipeJournal,
@@ -272,7 +272,7 @@ document.getElementById('conjureBtn').addEventListener('click',async()=>{
   if(!ingredients){ status.textContent='Add at least one ingredient to begin the experiment.'; document.getElementById('alchemistIngredients').focus(); return; }
   /* The key prompt depends on the config; do not race an early click. */
   await timeoutReady;
-  if(needsKey()){ openKeySettings(); status.textContent='Add your OpenRouter key for this tab to create a meal.'; return; }
+  if(needsKey()){ showKeyProblem('Add your OpenRouter key for this tab to create a meal.'); status.textContent='Add your OpenRouter key for this tab to create a meal.'; return; }
   btn.disabled=true; btn.innerHTML='<span class="spinner"></span>Creating…';
   status.textContent='Reading the fridge…';
   results.replaceChildren();
@@ -558,7 +558,7 @@ async function parseMeal(){
     return;
   }
   if(needsKey()){
-    openKeySettings();
+    showKeyProblem('Add your OpenRouter key for this tab to estimate nutrition.');
     showParseError('Add your OpenRouter key for this tab to estimate nutrition.');
     return;
   }

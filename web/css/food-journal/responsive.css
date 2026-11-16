@@ -1,7 +1,7 @@
 /* Responsive */
 @media (max-width: 1080px) {
   .a-lead { gap: 36px; }
-  .a-log, .a-alch__grid { gap: 38px; }
+  .a-log, .a-settings, .a-alch__grid { gap: 38px; }
   .a-editorial-note { margin-top: 24px; }
   .a-goal { gap: 40px; }
 }
@@ -12,7 +12,7 @@
   .a-page { padding: 0 22px 60px; }
   .a-lead { grid-template-columns: minmax(0, 1fr); gap: 30px; }
   .a-lead__plate .macro-plate { min-height: 340px; }
-  .a-log, .a-goal, .a-alch__grid { grid-template-columns: minmax(0, 1fr); gap: 34px; }
+  .a-log, .a-settings, .a-goal, .a-alch__grid { grid-template-columns: minmax(0, 1fr); gap: 34px; }
   .a-journal__head { align-items: flex-start; flex-direction: column; gap: 20px; }
   .a-search { width: 100%; max-width: 420px; }
   .a-alch__results { margin-top: 30px; }

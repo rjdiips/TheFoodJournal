@@ -86,8 +86,8 @@ function paint() {
   );
 }
 
-/** Switch to the settings tab, if the page has one, and focus the field. */
-export function openKeySettings() {
+/** Switch to the settings tab and focus the field. */
+function openKeySettings() {
   if (!mounted) return;
   paint();
   reveal();
@@ -118,23 +118,14 @@ export function mountKeySettings(slot, options = {}) {
   keyRequired = options.keyRequired === true;
   reveal = options.open || (() => {});
 
-  const title = options.provider === 'local' ? 'Local model' : 'OpenRouter key';
-  const copy = options.provider === 'local'
-    ? 'This deployment runs its own model, so Estimate and Cook need no key. '
-      + 'Nothing here is sent to OpenRouter.'
-    : 'Estimate and Cook call OpenRouter with this key. It stays in this browser '
-      + 'tab, is sent only with those two calls, and is gone when the tab closes. '
-      + 'No account, no login.';
+  const local = options.provider === 'local';
 
   panel = document.createElement('section');
   panel.className = 'npkey-settings';
-  panel.setAttribute('aria-labelledby', 'npKeyTitle');
-  panel.innerHTML = `
-    <span class="npkey-kicker">Your key, your tab</span>
-    <h2 class="npkey-title" id="npKeyTitle" tabindex="-1">${title}</h2>
-    <p class="npkey-copy">${copy}</p>
-    ${options.provider === 'local' ? '' : `
-    <form class="npkey-form" novalidate>
+  panel.innerHTML = local
+    ? `<p class="npkey-local"><strong>Local model.</strong> This deployment runs its
+        own model, so Estimate and Cook need no key. Nothing here is sent to OpenRouter.</p>`
+    : `<form class="npkey-form" novalidate>
       <label class="npkey-field"><span>OpenRouter key</span>
         <input type="password" spellcheck="false" autocomplete="off"
           placeholder="${PLACEHOLDER_EMPTY}" aria-describedby="npKeyNote" />
@@ -146,10 +137,10 @@ export function mountKeySettings(slot, options = {}) {
         <button type="submit" class="npkey-save">Save key</button>
         <button type="button" class="npkey-forget" hidden>Remove key</button>
       </div>
-    </form>`}`;
+    </form>`;
 
   slot.replaceChildren(panel);
-  if (options.provider === 'local') return;
+  if (local) return;
 
   input = /** @type {HTMLInputElement} */ (panel.querySelector('input'));
   note = /** @type {HTMLElement} */ (panel.querySelector('.npkey-note'));

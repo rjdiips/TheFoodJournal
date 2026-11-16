@@ -283,13 +283,21 @@
   <!-- ============ settings ============ -->
 
   <div id="view-settings" class="view" hidden>
-    <div id="keySlot"></div>
+    <section class="settings">
+      <div class="settings__copy">
+        <span class="eyebrow">Settings</span>
+        <h1 class="settings__title" id="settingsTitle" tabindex="-1">The model key</h1>
+        <p class="settings__sub">Estimate and Cook call OpenRouter with a key you supply. It stays in this browser tab, is sent only with those two calls, and is gone when you close the tab.</p>
+        <p class="settings__note">No account and no login. The journal never needs it, and nothing here is kept by the server.</p>
+      </div>
+      <div id="keySlot"></div>
+    </section>
   </div>
 
 </main>
 
 <footer class="foot">
-  <span>NutriParse · Compose and Journal</span>
+  <span>NutriParse · Compose, Journal and Settings</span>
   <span class="foot__note">Nutrition values are model estimates, not measurements.</span>
 </footer>
 

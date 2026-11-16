@@ -5,7 +5,7 @@ import {
   showError, hideError, PARSE_ENDPOINT, COOK_ENDPOINT, cookParts,
 } from '../nutriparse.js';
 import { clearCallDetail } from './inspector.js';
-import { keyHeaders, needsKey, openKeySettings, reportKeyFailure } from '../openrouter-key.js';
+import { keyHeaders, needsKey, reportKeyFailure, showKeyProblem } from '../openrouter-key.js';
 import { showSkeleton, resetTotals, renderItems } from './estimate.js';
 import { renderRecipes, skeletonCards, loadRecipeImage } from './recipes.js';
 import { showSample } from './samples.js';
@@ -41,7 +41,7 @@ async function submit() {
   // A very early click must use the server's values, not the safety net.
   if (state.configReady) await state.configReady;
   if (needsKey()) {
-    openKeySettings();
+    showKeyProblem('Add your OpenRouter key for this tab to use Estimate and Cook.');
     showError(
       'OpenRouter key needed',
       'Add your own key for this tab to use Estimate and Cook. The journal keeps working without it.',
