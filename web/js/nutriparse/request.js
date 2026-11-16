@@ -5,6 +5,7 @@ import {
   showError, hideError, PARSE_ENDPOINT, COOK_ENDPOINT, cookParts,
 } from '../nutriparse.js';
 import { clearCallDetail } from './inspector.js';
+import { keyHeaders, needsKey, openKeyPanel, showKeyProblem } from '../openrouter-key.js';
 import { showSkeleton, resetTotals, renderItems } from './estimate.js';
 import { renderRecipes, skeletonCards, loadRecipeImage } from './recipes.js';
 import { showSample } from './samples.js';
@@ -37,6 +38,20 @@ async function submit() {
     return;
   }
 
+  // A very early click must use the server's values, not the safety net.
+  if (state.configReady) await state.configReady;
+  if (needsKey()) {
+    openKeyPanel();
+    showError(
+      'OpenRouter key needed',
+      'Add your own key for this tab to use Estimate and Cook. The journal keeps working without it.',
+      false,
+    );
+    announce('OpenRouter key needed.');
+    el.text.focus();
+    return;
+  }
+
   hideError();
   setBusy(true, mode);
   const started = Date.now();
@@ -61,9 +76,6 @@ async function submit() {
     showSkeleton();
   }
 
-  // A very early click must use the server's values, not the safety net.
-  if (state.configReady) await state.configReady;
-
   const controller = new AbortController();
   const kind = mode === 'cook' ? 'cook' : 'parse';
   const timeout = requestTiming(kind).waitMs;
@@ -76,7 +88,7 @@ async function submit() {
 
     const response = await fetch(mode === 'cook' ? COOK_ENDPOINT : PARSE_ENDPOINT, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...keyHeaders() },
       body: JSON.stringify(body),
       signal: controller.signal,
     });
@@ -89,6 +101,9 @@ async function submit() {
     }
 
     if (!response.ok) {
+      if (response.status === 401 || response.status === 402) {
+        showKeyProblem(payload && payload.error);
+      }
       throw Object.assign(new Error((payload && payload.error) || `HTTP ${response.status}`), {
         status: response.status,
       });

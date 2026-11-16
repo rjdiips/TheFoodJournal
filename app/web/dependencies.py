@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Awaitable, Callable
 from urllib.parse import urlsplit
 
-from fastapi import HTTPException, Request
+from fastapi import Depends, HTTPException, Request
 
 from ..config import MAX_REQUEST_BYTES, ConfigurationError, Settings
 from ..journal import store
@@ -103,6 +103,29 @@ def http_transport(request: Request) -> ProviderTransport:
     return request.app.state.transport
 
 
+# The only place a browser key enters the server. The two AI routes read it;
+# the journal, image, and config routes never look at the header.
+OPENROUTER_KEY_HEADER = "x-openrouter-key"
+MAX_BROWSER_KEY_LENGTH = 200
+
+
+def ai_settings(
+    request: Request, settings: Settings = Depends(current_settings)
+) -> Settings:
+    """Overlay the browser's own OpenRouter key on this one AI request.
+
+    The copied settings go to both the service call and ``run_ai_feature`` so
+    the log line reports the model that actually served the request. A local
+    provider ignores the header, so its key value never reaches a local model.
+    """
+    key = request.headers.get(OPENROUTER_KEY_HEADER, "").strip()
+    if not key or settings.llm_provider != "openrouter":
+        return settings
+    if len(key) > MAX_BROWSER_KEY_LENGTH or not key.isprintable():
+        raise HTTPException(400, "That OpenRouter key does not look valid")
+    return settings.model_copy(update={"openrouter_api_key": key})
+
+
 def image_cache_dir(request: Request) -> Path:
     """Return the content-addressed recipe-image cache directory."""
     return request.app.state.image_cache_dir
@@ -163,6 +186,19 @@ def write_journal(request, operation, missing_is_404=False):
     return document
 
 
+def _client_ai_error(error, llm):
+    """Map an upstream key failure to the message and status the browser needs."""
+    if isinstance(error, LLMRequestError) and llm.provider == "openrouter":
+        if error.status in (401, 403):
+            return 401, "OpenRouter rejected the key. Check the key and try again."
+        if error.status == 402:
+            return 402, (
+                "This OpenRouter key is out of credits. Add credits on OpenRouter, "
+                "or use a different key."
+            )
+    return 502, str(error)
+
+
 async def run_ai_feature(feature, operation: Callable[[], Awaitable[dict]],
                          settings: Settings, request: Request):
     """Run one model-backed feature with the same structured logging as before."""
@@ -185,7 +221,8 @@ async def run_ai_feature(feature, operation: Callable[[], Awaitable[dict]],
             request_id, feature, round((time.monotonic() - started) * 1000), error,
             f" diagnostic={error.diagnostic}" if isinstance(error, LLMRequestError) else "",
         )
-        raise HTTPException(502, str(error)) from error
+        status, message = _client_ai_error(error, llm)
+        raise HTTPException(status, message) from error
     except Exception as error:
         LOGGER.exception(
             "event=llm_call_failed request_id=%s feature=%s duration_ms=%d error=unexpected_exception",

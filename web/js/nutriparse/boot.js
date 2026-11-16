@@ -8,6 +8,7 @@ import {
   el, COPY, state, setMode, setView, updateCount,
 } from '../nutriparse.js';
 import { Config } from '../config-module.js';
+import { mountKeyControl } from '../openrouter-key.js';
 import { showSample } from './samples.js';
 import { loadJournal, renderJournal } from './journal.js';
 import { repaintStepsOverflow } from './recipes.js';
@@ -47,6 +48,10 @@ async function boot() {
       el.configNoticeMsg.textContent = Config.describeFallback(config);
       el.configNotice.hidden = false;
     }
+    mountKeyControl(el.keySlot, {
+      available: config.provider !== 'local',
+      keyRequired: config.keyRequired,
+    });
   });
 
   await loadJournal();

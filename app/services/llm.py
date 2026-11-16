@@ -14,9 +14,10 @@ from .transport import ProviderTransport
 class LLMRequestError(RuntimeError):
     """Safe client error plus provider diagnostics intended only for server logs."""
 
-    def __init__(self, message, diagnostic):
+    def __init__(self, message, diagnostic, status=None):
         super().__init__(message)
         self.diagnostic = diagnostic
+        self.status = status
 
 
 def safe_error_excerpt(raw, secrets=()):
@@ -53,7 +54,10 @@ async def chat_completion(
     started = time.monotonic()
     config = settings.llm(default_timeout)
     if config.provider == "openrouter" and not config.api_key:
-        raise RuntimeError("OPENROUTER_API_KEY is not configured")
+        raise RuntimeError(
+            "No OpenRouter key is configured. Add your key in the app to use "
+            "Estimate and Cook."
+        )
 
     request_payload = {
         "model": config.model,
@@ -105,7 +109,9 @@ async def chat_completion(
             f"response={safe_error_excerpt(response.content[:4096], (config.api_key, prompt, system_prompt))}"
         )
         raise LLMRequestError(
-            f"{label} returned HTTP {response.status_code}", diagnostic
+            f"{label} returned HTTP {response.status_code}",
+            diagnostic,
+            response.status_code,
         )
 
     try:

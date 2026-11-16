@@ -35,4 +35,6 @@ def config(settings: Settings = Depends(current_settings)):
         "parse_timeout_ms": _milliseconds(parse.timeout),
         "cook_timeout_ms": _milliseconds(cook.timeout),
         "image_timeout_ms": _milliseconds(settings.local_image_timeout),
+        # Only whether a key exists; the value never leaves the server.
+        "key_required": parse.provider == "openrouter" and not parse.api_key,
     }

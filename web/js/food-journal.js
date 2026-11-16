@@ -2,6 +2,7 @@
    config client as Compose, so neither page relies on the classic globals. */
 
 import { Config } from './config-module.js';
+import { keyHeaders, mountKeyControl, needsKey, openKeyPanel, showKeyProblem } from './openrouter-key.js';
 import {
   read, addEntries, updateEntries, removeEntry, setGoal, claimBrowserEntries,
   ensureJournalId, setJournalId, wipeJournal,
@@ -74,13 +75,16 @@ async function parseMealText(text){
   try{
     const resp=await fetch('/api/parse', {
       method:'POST',
-      headers:{'Content-Type':'application/json'},
+      headers:{'Content-Type':'application/json',...keyHeaders()},
       body:JSON.stringify({text}),
       signal:ctrl.signal
     });
     let payload=null;
     try{ payload=await resp.json(); }catch(_){ payload=null; }
-    if(!resp.ok) throw new Error((payload&&payload.error)||('HTTP '+resp.status));
+    if(!resp.ok){
+      if(resp.status===401||resp.status===402) showKeyProblem(payload&&payload.error);
+      throw Object.assign(new Error((payload&&payload.error)||('HTTP '+resp.status)),{status:resp.status});
+    }
     return payload;
   }finally{ clearTimeout(tid); }
 }
@@ -91,10 +95,14 @@ async function conjureRecipes(ingredients, useSoon){
   const tid=setTimeout(()=>ctrl.abort(),waitMillis('cook'));
   try{
     const resp=await fetch('/api/leftover-alchemist',{
-      method:'POST', headers:{'Content-Type':'application/json'},
+      method:'POST', headers:{'Content-Type':'application/json',...keyHeaders()},
       body:JSON.stringify({ingredients, use_soon:useSoon}), signal:ctrl.signal
     });
-    if(!resp.ok){ const err=await resp.json().catch(()=>({error:'Request failed'})); throw new Error(err.error||('HTTP '+resp.status)); }
+    if(!resp.ok){
+      const err=await resp.json().catch(()=>({error:'Request failed'}));
+      if(resp.status===401||resp.status===402) showKeyProblem(err.error);
+      throw Object.assign(new Error(err.error||('HTTP '+resp.status)),{status:resp.status});
+    }
     return await resp.json();
   }finally{ clearTimeout(tid); }
 }
@@ -262,6 +270,7 @@ document.getElementById('conjureBtn').addEventListener('click',async()=>{
   const status=document.getElementById('alchemistStatus');
   const results=document.getElementById('recipeResults');
   if(!ingredients){ status.textContent='Add at least one ingredient to begin the experiment.'; document.getElementById('alchemistIngredients').focus(); return; }
+  if(needsKey()){ openKeyPanel(); status.textContent='Add your OpenRouter key for this tab to create a meal.'; return; }
   btn.disabled=true; btn.innerHTML='<span class="spinner"></span>Creating…';
   status.textContent='Reading the fridge…';
   results.replaceChildren();
@@ -541,6 +550,11 @@ async function parseMeal(){
     showInlineError(textInput,'Describe at least one food first.');
     showParseError('Describe at least one food first.');
     textInput.focus();
+    return;
+  }
+  if(needsKey()){
+    openKeyPanel();
+    showParseError('Add your OpenRouter key for this tab to estimate nutrition.');
     return;
   }
 
@@ -1042,6 +1056,10 @@ async function loadTimeouts(){
     configNotice.textContent=Config.describeFallback(timeoutConfig);
     configNotice.hidden=false;
   }
+  mountKeyControl(document.getElementById('keySlot'),{
+    available:timeoutConfig.provider!=='local',
+    keyRequired:timeoutConfig.keyRequired,
+  });
 }
 
 async function boot(){

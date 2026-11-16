@@ -11,6 +11,7 @@
 <link rel="stylesheet" href="/assets/css/nutriparse/results.css" />
 <link rel="stylesheet" href="/assets/css/nutriparse/recipes.css" />
 <link rel="stylesheet" href="/assets/css/nutriparse/journal.css" />
+<link rel="stylesheet" href="/assets/css/openrouter-key.css" />
 </head>
 <body>
 
@@ -19,10 +20,13 @@
     <span class="mark" aria-hidden="true"></span>
     <span class="brand">NutriParse</span>
   </div>
-  <nav class="topbar__nav" aria-label="Views">
-    <button type="button" class="viewtab is-active" data-view="compose" aria-pressed="true">Compose</button>
-    <button type="button" class="viewtab" data-view="journal" aria-pressed="false">Journal</button>
-  </nav>
+  <div class="topbar__right">
+    <nav class="topbar__nav" aria-label="Views">
+      <button type="button" class="viewtab is-active" data-view="compose" aria-pressed="true">Compose</button>
+      <button type="button" class="viewtab" data-view="journal" aria-pressed="false">Journal</button>
+    </nav>
+    <div id="keySlot" class="topbar__key"></div>
+  </div>
 </header>
 
 <main class="page">

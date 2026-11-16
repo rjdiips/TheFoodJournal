@@ -201,6 +201,7 @@ class TestRuntimeConfig(ApiTestCase):
             "parse_timeout_ms": milliseconds(DEFAULT_PARSE_TIMEOUT),
             "cook_timeout_ms": milliseconds(DEFAULT_COOK_TIMEOUT),
             "image_timeout_ms": milliseconds(IMAGE_TIMEOUT),
+            "key_required": True,
         })
 
     def test_the_response_is_not_cached(self):
@@ -215,6 +216,14 @@ class TestRuntimeConfig(ApiTestCase):
         self.assertEqual(body["model"], "local-test")
         self.assertEqual(body["parse_timeout_ms"], milliseconds(DEFAULT_LOCAL_TIMEOUT))
         self.assertEqual(body["cook_timeout_ms"], milliseconds(DEFAULT_LOCAL_TIMEOUT))
+
+    def test_a_server_key_means_the_browser_need_not_supply_one(self):
+        self.set_settings(openrouter_api_key="server-key")
+        self.assertFalse(self.client.get("/api/config").json()["key_required"])
+
+    def test_a_local_provider_never_asks_for_a_browser_key(self):
+        self.set_settings(llm_provider="local")
+        self.assertFalse(self.client.get("/api/config").json()["key_required"])
 
     def test_llm_timeout_overrides_both_llm_timeouts(self):
         self.set_settings(llm_provider="openrouter", llm_timeout=12.5)
@@ -736,7 +745,12 @@ class TestRecipeImageCache(ApiTestCase):
 class TestAiAndImages(ApiTestCase):
     def test_missing_provider_key_is_502(self):
         response = self.client.post("/api/parse", json={"text": "2 rotis and dal"})
-        self.assert_error(response, 502, "OPENROUTER_API_KEY is not configured")
+        self.assert_error(
+            response,
+            502,
+            "No OpenRouter key is configured. Add your key in the app to use "
+            "Estimate and Cook.",
+        )
 
     def test_disabled_image_generation_is_503(self):
         self.set_settings(local_image_generation_enabled=False)
@@ -865,6 +879,145 @@ def complete_recipe(steps=5, **overrides):
 def complete_answer(recipe=None):
     recipe = complete_recipe() if recipe is None else recipe
     return {"recipes": [recipe for _ in range(RECIPE_COUNT)]}
+
+
+@unittest.skipUnless(TestClient is not None, globals().get("SKIP_REASON", ""))
+class TestBrowserKey(ApiTestCase):
+    """A visitor's own OpenRouter key overrides the deployment's for AI calls."""
+
+    def setUp(self):
+        self.seen = []
+        self.status = 200
+        self.reply = {"items": [{
+            "name": "Dal", "portion": "1 bowl", "calories": 150,
+            "protein": 9, "carbs": 20, "fat": 4,
+        }]}
+        self.http_transport = httpx.MockTransport(self.handle)
+        self.retry_delays = (0.0, 0.0)
+        super().setUp()
+        self.set_settings(
+            llm_provider="openrouter",
+            openrouter_api_key="server-key",
+            openrouter_base_url="http://model.test/v1",
+            openrouter_model="stub",
+            local_image_generation_enabled=True,
+            local_image_api_url="http://images.test/txt2img",
+        )
+
+    def handle(self, request):
+        self.seen.append(request)
+        if self.status != 200:
+            echoed = request.headers.get("authorization", "")
+            return httpx.Response(
+                self.status, content=json.dumps({"error": f"upstream {echoed}"}).encode()
+            )
+        if request.url.path.endswith("/chat/completions"):
+            return httpx.Response(200, json={
+                "choices": [{"message": {"content": json.dumps(self.reply)}}],
+                "usage": {"prompt_tokens": 3, "completion_tokens": 4},
+            })
+        return httpx.Response(200, json={
+            "images": [base64.b64encode(b"fake png").decode()],
+        })
+
+    def browser_headers(self, key="visitor-key"):
+        return {"X-OpenRouter-Key": key}
+
+    def test_a_visitor_key_reaches_estimate(self):
+        response = self.client.post(
+            "/api/parse", json={"text": "dal"}, headers=self.browser_headers()
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.seen[0].headers["authorization"], "Bearer visitor-key")
+
+    def test_the_same_key_reaches_cook(self):
+        self.reply = complete_answer()
+        response = self.client.post(
+            "/api/leftover-alchemist",
+            json={"ingredients": "dal", "use_soon": ""},
+            headers=self.browser_headers(),
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.seen[0].headers["authorization"], "Bearer visitor-key")
+
+    def test_a_server_key_still_serves_a_request_without_one(self):
+        response = self.client.post("/api/parse", json={"text": "dal"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.seen[0].headers["authorization"], "Bearer server-key")
+
+    def test_a_local_provider_never_receives_the_browser_key(self):
+        self.set_settings(
+            llm_provider="local",
+            llm_api_key="local-key",
+            llm_base_url="http://model.test/v1",
+            llm_model="stub",
+        )
+        response = self.client.post(
+            "/api/parse", json={"text": "dal"}, headers=self.browser_headers()
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.seen[0].headers.get("authorization"), "Bearer local-key")
+
+    def test_journal_and_config_ignore_the_header(self):
+        config = self.client.get("/api/config", headers=self.browser_headers())
+        self.assertEqual(config.status_code, 200)
+        self.assertNotIn("visitor-key", json.dumps(config.json()))
+
+        journal = self.client.get(
+            "/api/journal",
+            headers=self.write_headers(**self.browser_headers()),
+        )
+        self.assertEqual(journal.status_code, 200)
+        self.assertEqual(self.seen, [])
+
+    def test_the_image_route_never_forwards_the_header(self):
+        response = self.client.post(
+            "/api/recipe-image",
+            json={"title": "Dal", "description": "A bowl"},
+            headers=self.browser_headers(),
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("authorization", self.seen[0].headers)
+
+    def test_401_asks_the_user_to_check_the_key(self):
+        self.status = 401
+        response = self.client.post(
+            "/api/parse", json={"text": "dal"}, headers=self.browser_headers()
+        )
+        self.assert_error(
+            response, 401, "OpenRouter rejected the key. Check the key and try again."
+        )
+
+    def test_402_reports_out_of_credits(self):
+        self.status = 402
+        response = self.client.post(
+            "/api/parse", json={"text": "dal"}, headers=self.browser_headers()
+        )
+        self.assert_error(
+            response,
+            402,
+            "This OpenRouter key is out of credits. Add credits on OpenRouter, "
+            "or use a different key.",
+        )
+
+    def test_the_key_never_reaches_the_browser_error_or_the_log(self):
+        self.status = 401
+        secret = "visitor-key-super-secret"
+        with mock.patch("app.web.dependencies.LOGGER.warning") as warning:
+            response = self.client.post(
+                "/api/parse", json={"text": "dal"}, headers=self.browser_headers(secret)
+            )
+        self.assertNotIn(secret, response.text)
+        logged = " ".join(str(argument) for argument in warning.call_args.args)
+        self.assertNotIn(secret, logged)
+        self.assertIn("<redacted>", logged)
+
+    def test_an_overlong_key_is_refused_before_any_provider_call(self):
+        response = self.client.post(
+            "/api/parse", json={"text": "dal"}, headers=self.browser_headers("k" * 300)
+        )
+        self.assert_error(response, 400, "That OpenRouter key does not look valid")
+        self.assertEqual(self.seen, [])
 
 
 @unittest.skipUnless(TestClient is not None, globals().get("SKIP_REASON", ""))

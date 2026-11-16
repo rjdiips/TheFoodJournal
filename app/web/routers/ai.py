@@ -6,13 +6,15 @@ from ...config import MAX_TEXT_LENGTH, Settings
 from ...services.nutrition import parse_meal
 from ...services.recipes import suggest_recipes
 from ...services.transport import ProviderTransport
-from ..dependencies import current_settings, http_transport, json_body, run_ai_feature
+from ..dependencies import ai_settings, http_transport, json_body, run_ai_feature
 from ..schemas import ApiError, ParseRequest, ParseResponse, RecipeRequest, RecipeResponse
 
 router = APIRouter(prefix="/api", tags=["ai"])
 
 _AI_ERRORS = {
     400: {"model": ApiError},
+    401: {"model": ApiError},
+    402: {"model": ApiError},
     413: {"model": ApiError},
     415: {"model": ApiError},
     502: {"model": ApiError},
@@ -28,7 +30,7 @@ _AI_ERRORS = {
 async def parse(
     request: Request,
     payload: ParseRequest,
-    settings: Settings = Depends(current_settings),
+    settings: Settings = Depends(ai_settings),
     transport: ProviderTransport = Depends(http_transport),
 ):
     text = payload.text.strip()
@@ -54,7 +56,7 @@ async def parse(
 async def leftover_alchemist(
     request: Request,
     payload: RecipeRequest,
-    settings: Settings = Depends(current_settings),
+    settings: Settings = Depends(ai_settings),
     transport: ProviderTransport = Depends(http_transport),
 ):
     ingredients = payload.ingredients.strip()

@@ -23,9 +23,22 @@ test('server timeouts gain a ten-second client margin', () => {
   assert.equal(config.source, 'server');
   assert.equal(config.provider, 'local');
   assert.equal(config.model, 'qwen-test');
+  assert.equal(config.keyRequired, false);
   assert.deepEqual(config.parse, { serverMs: 180000, waitMs: 190000 });
   assert.deepEqual(config.cook, { serverMs: 180000, waitMs: 190000 });
   assert.deepEqual(config.image, { serverMs: 240000, waitMs: 250000 });
+});
+
+test('the server can say the browser must supply its own key', () => {
+  const config = Config.fromPayload({
+    provider: 'openrouter',
+    key_required: true,
+    parse_timeout_ms: 30000,
+    cook_timeout_ms: 45000,
+    image_timeout_ms: 240000,
+  });
+
+  assert.equal(config.keyRequired, true);
 });
 
 test('a missing or malformed timeout uses the overall safety net', () => {

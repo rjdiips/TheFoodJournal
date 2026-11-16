@@ -68,6 +68,10 @@ body {
 
 .topbar__brand { display: flex; align-items: center; gap: 10px; }
 
+/* The view switch and the OpenRouter key pill share the top bar's right edge. */
+.topbar__right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: flex-end; }
+.topbar__key:empty { display: none; }
+
 .mark {
   width: 18px; height: 18px;
   border-radius: 4px;

@@ -25,6 +25,7 @@ export const el = {
   status: document.getElementById('status'),
   configNotice: document.getElementById('configNotice'),
   configNoticeMsg: document.getElementById('configNoticeMsg'),
+  keySlot: document.getElementById('keySlot'),
   error: document.getElementById('error'),
   errorTitle: document.getElementById('errorTitle'),
   errorMsg: document.getElementById('errorMsg'),

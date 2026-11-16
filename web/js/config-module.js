@@ -10,8 +10,8 @@ import './config-client.js';
 
 /** @typedef {{serverMs: number|null, waitMs: number}} TimeoutChannel */
 /** @typedef {{source: 'server'|'fallback', error: string|null, provider: string,
- *   model: string, parse: TimeoutChannel, cook: TimeoutChannel,
- *   image: TimeoutChannel}} ClientConfig */
+ *   model: string, keyRequired: boolean, parse: TimeoutChannel,
+ *   cook: TimeoutChannel, image: TimeoutChannel}} ClientConfig */
 /** @typedef {{FALLBACK_MS: number,
  *   load(fetchImpl?: typeof fetch): Promise<ClientConfig>,
  *   fromPayload(payload: unknown): ClientConfig,
